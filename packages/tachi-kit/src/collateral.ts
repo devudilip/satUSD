@@ -6,18 +6,18 @@ import type { NetworkConfig } from "./net.js";
 /**
  * Collateral tracking model.
  *
- * Verified live (docs/BACKGROUND.md): the cooperative leaf needs a real 5-of-7
- * validator quorum, and the hosted daemons report only 1 live validator today —
- * `finalizeVtxoPsbt` fails with "0 valid node signatures ... needs at least 5"
- * for any ledger-level VTXO transfer. That path is currently unusable, and it
- * isn't something we can fix from here.
- *
- * So collateral is tracked the same way Phase 1's spike verified a deposit:
- * read the vault's real BTC balance straight off Bitcoin via `scantxoutset`.
- * This needs no quorum, no cooperative leaf, and matches the project's
- * "verify it yourself" proof-of-reserves stance. `getLockedCollateral` (the
- * VTXO-ledger read) is kept as an optional, best-effort cross-check — never the
- * source of truth — for whenever more validators come online.
+ * A collateral channel's actual custody guarantee (docs/COLLATERAL-MODEL.md
+ * §3, Track B) lives on Bitcoin — the MuSig2 joint vault, the pre-signed exit
+ * tx, the pre-signed liquidation refund — none of which this module builds
+ * (see `commitment.ts`). What this module gives is a second, independent
+ * read of "is the collateral really there": `getVaultBalanceSats` checks
+ * Bitcoin directly via `scantxoutset`, the same way Phase 1's spike verified
+ * a deposit, with no dependency on the Tachi ledger or its validator quorum.
+ * Use it for proof-of-reserves and as a cross-check against `commitment.ts`'s
+ * own bookkeeping — never as a substitute for holding the pre-signed exit tx
+ * or refund correctly. `checkQuorum` is a pre-flight for the cooperative
+ * paths `commitment.ts` uses (`registerVault`, `cosignRefund`) — real, not a
+ * fallback (see `docs/COLLATERAL-MODEL.md` §1 for what was verified live).
  */
 
 /** The vault's confirmed BTC balance, read directly from Bitcoin via `scantxoutset`. No quorum required. */

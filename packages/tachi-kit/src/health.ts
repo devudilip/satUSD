@@ -1,12 +1,14 @@
 /**
- * Pure CDP risk math — collateral ratio, mint eligibility, delinquency,
- * delinquency price. No network calls, no I/O. All money values are bigint:
+ * Pure CDP risk math — collateral ratio, mint eligibility, liquidation share
+ * and price. No network calls, no I/O. All money values are bigint:
  * collateral in sats, debt and price in USD cents.
  *
- * Liquidation is soft (see docs/BACKGROUND.md and PLAN.md Phase 4): TAURUS
- * vaults require the owner's own signature on every spending path, so there is
- * no seizure math here — only the delinquency threshold that gates new mints
- * and escalates the stability fee.
+ * Liquidation is real, not soft (see docs/COLLATERAL-MODEL.md): a MuSig2
+ * joint owner key (borrower + protocol) with a pre-signed exit tx (the
+ * borrower's guarantee) and a pre-signed, quorum-cosigned liquidation refund
+ * (the protocol's enforcement) — verified live in scripts/03 and
+ * scripts/04-spike-musig-vault.ts. `shareForLiquidation` computes the split
+ * a refund state commits to.
  */
 
 export const SATS_PER_BTC = 100_000_000n;
@@ -62,4 +64,30 @@ export function priceForRatioUsdCents(
 ): bigint | null {
   if (debtUsdCents === 0n || collateralSats === 0n) return null;
   return (thresholdBps * debtUsdCents * SATS_PER_BTC) / (BPS_DENOMINATOR * collateralSats);
+}
+
+/**
+ * The liquidation split a refund state should commit to (docs/COLLATERAL-MODEL.md §3.5):
+ *
+ *   priceLiq = debt / (collateral × lltv)                     — price at which ratio == lltv
+ *   share    = min(collateral, ceil(debt × (1 + penalty) / priceLiq))
+ *
+ * `share` is what the protocol's refund output pays out; the rest goes to
+ * the borrower's `to_local`. Uses `priceLiq`, not spot — the tx is meant to
+ * be broadcast when spot has reached it, and the penalty buffer plus
+ * over-collateralization absorb the gap if spot has moved past it by then.
+ * `null` when there is no debt or no collateral (nothing to liquidate).
+ */
+export function shareForLiquidation(
+  debtUsdCents: bigint,
+  collateralSats: bigint,
+  lltvBps: bigint,
+  penaltyBps: bigint,
+): { shareSats: bigint; priceLiqUsdCents: bigint } | null {
+  const priceLiqUsdCents = priceForRatioUsdCents(collateralSats, debtUsdCents, lltvBps);
+  if (priceLiqUsdCents === null || priceLiqUsdCents === 0n) return null;
+  const numerator = debtUsdCents * (BPS_DENOMINATOR + penaltyBps) * SATS_PER_BTC;
+  const denominator = BPS_DENOMINATOR * priceLiqUsdCents;
+  const shareSats = (numerator + denominator - 1n) / denominator; // ceil division
+  return { shareSats: shareSats > collateralSats ? collateralSats : shareSats, priceLiqUsdCents };
 }

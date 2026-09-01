@@ -51,6 +51,9 @@ importers:
 
   packages/tachi-kit:
     dependencies:
+      '@scure/btc-signer':
+        specifier: 2.4.1
+        version: 2.4.1
       '@tachibtc/tachi-sdk-ts':
         specifier: 0.2.1
         version: 0.2.1
@@ -60,6 +63,10 @@ importers:
       '@tachibtc/taurus-wallet-aggregator':
         specifier: 0.4.5
         version: 0.4.5(typescript@5.9.3)
+    devDependencies:
+      '@noble/curves':
+        specifier: ^2.4.0
+        version: 2.4.0
 
 packages:
 

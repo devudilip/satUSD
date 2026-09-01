@@ -8,6 +8,7 @@ import {
   canMint,
   isDelinquent,
   priceForRatioUsdCents,
+  shareForLiquidation,
 } from "../src/health.js";
 
 const ONE_BTC = SATS_PER_BTC;
@@ -123,5 +124,34 @@ describe("priceForRatioUsdCents", () => {
     expect(priceForRatioUsdCents(collateralSats, debtUsdCents)).toBe(
       priceForRatioUsdCents(collateralSats, debtUsdCents, DELINQUENCY_RATIO_BPS),
     );
+  });
+});
+
+describe("shareForLiquidation", () => {
+  it("is null with no debt or no collateral", () => {
+    expect(shareForLiquidation(0n, ONE_BTC, DELINQUENCY_RATIO_BPS, 800n)).toBeNull();
+    expect(shareForLiquidation(1_000n, 0n, DELINQUENCY_RATIO_BPS, 800n)).toBeNull();
+  });
+
+  it("computes an exact split with no rounding", () => {
+    // lltv 200%, no penalty: priceLiq = 100,000 cents; share = 50,000,000 sats exactly
+    const result = shareForLiquidation(50_000n, ONE_BTC, 20_000n, 0n);
+    expect(result).not.toBeNull();
+    expect(result!.priceLiqUsdCents).toBe(100_000n);
+    expect(result!.shareSats).toBe(50_000_000n);
+  });
+
+  it("rounds up on an inexact split", () => {
+    const result = shareForLiquidation(100_000n, ONE_BTC, DELINQUENCY_RATIO_BPS, 800n);
+    expect(result).not.toBeNull();
+    expect(result!.priceLiqUsdCents).toBe(130_000n);
+    // 108,000,000,000,000,000 / 1,300,000,000 = 83,076,923.07... -> ceils up
+    expect(result!.shareSats).toBe(83_076_924n);
+  });
+
+  it("caps the share at the full collateral, never more", () => {
+    const result = shareForLiquidation(100_000n, ONE_BTC, DELINQUENCY_RATIO_BPS, 50_000n);
+    expect(result).not.toBeNull();
+    expect(result!.shareSats).toBe(ONE_BTC);
   });
 });
