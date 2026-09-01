@@ -1,0 +1,32 @@
+{
+  "name": "satusd",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "bootstrap": "tsx scripts/00-bootstrap-regtest.ts",
+    "spike": "tsx scripts/01-spike-vault.ts",
+    "spike:collateral": "tsx scripts/02-spike-collateral.ts",
+    "demo:liquidate": "tsx scripts/demo-liquidate.ts",
+    "demo:exit": "tsx scripts/unilateral-exit.ts",
+    "verify:reserves": "tsx scripts/verify-reserves.ts",
+    "dev": "echo 'engine + web dev servers land in Phase 3/5'",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@satusd/tachi-kit": "workspace:*",
+    "@tachibtc/tachi-sdk-ts": "0.2.1",
+    "@tachibtc/taurus-vault-core": "0.3.4",
+    "@tachibtc/taurus-wallet-aggregator": "0.4.5",
+    "dotenv": "^16.4.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

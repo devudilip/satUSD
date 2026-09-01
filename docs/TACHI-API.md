@@ -25,7 +25,7 @@ docs site. Read it when in doubt.
 
 ```bash
 bitcoind -regtest -daemon -rpcuser=tachi -rpcpassword=tachi \
-  -rpcport=18443 -fallbackfee=0.0001
+  -rpcport=18443 -fallbackfee=0.0001 -txindex=1
 bitcoin-cli -regtest -rpcuser=tachi -rpcpassword=tachi createwallet dev
 bitcoin-cli -regtest -rpcuser=tachi -rpcpassword=tachi -generate 101
 ```

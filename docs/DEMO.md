@@ -19,7 +19,8 @@ we disappear.*
 - `createVault()` → show the **P2TR address on Bitcoin regtest**
 - Show the tap tree: NUMS-disabled key path, cooperative 5-of-7 leaf, exit leaf
 - `depositToVault(0.5 BTC)`, mine a block
-- Show the VTXO on the Tachi ledger with **`locked: true`**
+- Show the balance confirmed via `bitcoind` `scantxoutset` — no dependency on the
+  Tachi ledger's validator quorum for something this basic
 
 > "That's a Taproot output on Bitcoin. Nothing was wrapped and nothing was bridged."
 
@@ -41,14 +42,19 @@ we disappear.*
 
 - Download the JSON attestation
 
-### 2:50 — Liquidation (60s)
+### 2:50 — Delinquency, honestly (60s)
 
 - Drop the oracle price → position falls below **130%**
-- Risk feed lights up; the **keeper bot is a separate process using only the public
-  API** — no privileged access
-- Liquidation settles on-chain: keeper pays satUSD, takes BTC at an 8% discount,
-  surplus returns to the borrower
-- Global CR on the dashboard updates live
+- Risk feed lights up; CDP is marked **delinquent** — new mints blocked, stability
+  fee escalates. **No BTC moves. Nobody's collateral gets seized.**
+- Say why, on stage: "TAURUS vaults need the owner's own signature on every spend,
+  cooperative or exit, no exception. That's the same guarantee that makes the exit
+  demo work in 90 seconds — we can't build MakerDAO-style forced liquidation on it
+  without giving that guarantee up. So we didn't fake one."
+- The **keeper bot is a separate process using only the public API** — it watches
+  prices and flags delinquency; it has no more power than anyone else because none
+  exists to grant it
+- `/reserves` reports delinquent debt plainly, right next to healthy collateral
 
 ### 3:50 — Redeem (30s)
 

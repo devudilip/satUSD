@@ -24,19 +24,28 @@ its public surface stable — see [`../../SHARED-CONTEXT.md`](../../SHARED-CONTE
 **Tachi has no developer-facing SatVM or EVM.** Do not go looking for a chain ID, a
 Solidity deployment path, or an asset-issuance call — none exist, and the docs
 confirm it. Protocol logic runs **off-chain and deterministically**; custody stays on
-Bitcoin in TAURUS Taproot vaults; VTXOs with `locked: true` are the collateral
-primitive; HAT/RIP proofs make it verifiable.
+Bitcoin in TAURUS Taproot vaults; collateral is verified directly against each
+vault's real Bitcoin balance (`bitcoind scantxoutset`), **not** the Tachi ledger's
+VTXO `locked` flag — that path needs cooperative-leaf validator signatures the
+public API has no documented way to collect (see `BACKGROUND.md`). HAT/RIP proofs
+make everything verifiable.
 
-**Do not hide this.** The README states it plainly and that is deliberate.
+**There is also no forced liquidation, by design.** Every TAURUS vault spending
+path requires the owner's own signature, unconditionally — that's what makes the
+exit-leaf self-custody guarantee real, and it means nothing can seize a
+borrower's BTC. Liquidation here is soft: delinquency flag, blocked mints,
+escalated fee. See `BACKGROUND.md` and the README's Mechanics section.
+
+**Do not hide any of this.** The README states it plainly and that is deliberate.
 
 ## Build order, compressed
 
 1. **Spike first.** No product code until you have created a vault, deposited BTC,
-   and moved a VTXO on live regtest. The SDKs are v0.x.
+   and verified the balance via bitcoind on live regtest. The SDKs are v0.x.
 2. **Build the ending early.** `scripts/unilateral-exit.ts` — engine killed, 1008
    blocks mined, user sweeps their own BTC. It is the demo that wins the bounty.
    Draft it in Phase 2 and never let it break.
-3. Then: engine → liquidation → UI → proof-of-reserves.
+3. Then: engine → soft delinquency tracking → UI → proof-of-reserves.
 
 ## Rules
 
@@ -47,24 +56,23 @@ primitive; HAT/RIP proofs make it verifiable.
 - The keeper bot uses only the public API — no privileged access. That is the point.
 - Report honestly. If something does not work, say so in the README.
 
-## Two open questions
+## Open question
 
 Ask the Tachi team early: Telegram `@tachi_btc` / `team@tachibtc.com`.
 
 **Q1 — Is there an unpublished SatVM/EVM endpoint for hackathon participants?**
 If yes, stop and escalate; the architecture gets materially simpler.
 
-**Q2 — Does VTXO `locked` allow *third-party* escrow, or only self-locking?**
-The one unvalidated assumption. Resolve it in Phase 2 with a test.
-**Fallback if no:** collateral becomes a VTXO in a 2-of-2 protocol/user TAURUS vault.
-Same self-custody guarantees, more PSBT plumbing, ~1 extra day. **Do not block on
-the answer** — build toward the fallback-compatible interface in `collateral.ts`.
+(Q2, "does VTXO `locked` allow third-party escrow," was resolved as moot —
+see `BACKGROUND.md`. Neither self- nor third-party ledger-level locking works
+via the public API right now, so collateral tracking doesn't depend on the
+answer either way.)
 
 ## First commands
 
 ```bash
 bitcoind -regtest -daemon -rpcuser=tachi -rpcpassword=tachi \
-  -rpcport=18443 -fallbackfee=0.0001
+  -rpcport=18443 -fallbackfee=0.0001 -txindex=1
 pnpm install
 pnpm bootstrap
 pnpm spike        # must pass before anything else

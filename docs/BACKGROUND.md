@@ -193,15 +193,108 @@ liveness before relying on the cooperative path; the exit path always works.
 Combined with the SDK's `getLockedVtxos(vault)`, the ledger has a native concept of
 **a VTXO locked to a vault**. That is our collateral escrow primitive.
 
-### OPEN QUESTION #2
+### VERIFIED — Phase 1 spike passed (2026-08-31)
+
+`pnpm bootstrap && pnpm spike` (see `docs/PLAN.md` Phase 1) ran end to end against
+live `rpc-regtest.tachibtc.com` plus a local `bitcoind -regtest`: `createVault`
+produced a real P2TR address, `depositToVault` broadcast a real regtest txid, and
+`scantxoutset` confirmed the deposit landed on the vault address after one mined
+block. The exit leaf's `csvBlocks` is `1008` and `exitLeaf.userKey` does equal
+`vault.userKey.xOnly`, exactly as this document claims below.
+
+One correction to the quickstart: `-txindex=1` is required on local `bitcoind`.
+Without it, `depositToVault`'s PSBT builder fails with `getrawtransaction` error
+-5 ("No such mempool transaction") when it looks up the funding UTXO's previous
+transaction — bitcoind's default index doesn't cover non-wallet transactions. All
+bitcoind commands in this repo's docs now include the flag.
+
+### VERIFIED — no forced liquidation is possible, by design (2026-08-31)
+
+Read the full `taurus-vault-core` type surface — every leaf, `buildRefundPsbt`,
+the BOLT-3-style commitment/state-hint machinery — to resolve this precisely.
+
+**The cooperative leaf's script is `<userPubkey> OP_CHECKSIGVERIFY <node quorum>
+OP_CHECKSIGADD ... OP_NUMEQUAL`.** The `CHECKSIGVERIFY` on the vault owner's key
+is unconditional and comes first — no configuration of the node quorum (real
+Tachi validators or a substituted key) removes it. The exit leaf is user-only by
+definition. **There is no third spending path.** So no party other than the vault
+owner can ever move funds out of a TAURUS vault, full stop — this isn't an
+implementation gap, it's what "unilateral exit" / self-custody means.
+
+The refund/`to_local`/commitment system (`buildRefundPsbt`, `encodeStateHint`,
+etc.) looked like a possible escape hatch — it lets the user pre-sign a payout
+and pay an extra output to a third party. It isn't one: state numbers are
+monotonic and the daemon does "stale-state filtering," so pre-signing multiple
+alternative future payouts (a liquidation "ladder" keyed to price bands) risks
+the watchtower treating a later-broadcast lower state as a stale replay and
+sweeping the *entire* balance to the quorum as a penalty — worse than doing
+nothing. The only way this machinery gives real teeth is continuous, live
+bilateral state updates while the borrower stays online — full payment-channel
+engineering, and it still only binds engaged borrowers.
+
+**Consequence for satUSD:** liquidation is soft (delinquency flag, blocked mints,
+escalated fee — see `PLAN.md` Phase 4 and the README's Mechanics section), not
+seizure. The same holds for Liquity-style forced redemption against a specific
+CDP — it has the identical forced-custody requirement MakerDAO's liquidation
+does, and Tachi doesn't offer it either. Peg defense is arbitrage-only.
+
+This also settles Open Question #2 below in the strong direction: even genuine
+third-party VTXO "locking" (if it worked) wouldn't matter, because the underlying
+Bitcoin vault never grants seize power regardless.
+
+### VERIFIED — cooperative-leaf VTXO transfers do not work via the documented public API, root cause unclear (2026-08-31)
+
+Attempted the exact canonical sequence from §7 live: `createVault` → deposit →
+register the deposit as a VTXO → `buildVtxoPsbt` → `verifyVtxoPsbt` →
+`signVtxoPsbtAsUser` → `finalizeVtxoPsbt`, transferring the VTXO to the vault's
+own address. `finalizeVtxoPsbt` throws `input[0] has 0 valid node signatures on
+the cooperative leaf, needs at least 5` — expected, since nothing in that
+sequence, or anywhere in the public REST/SDK surface for a plain transfer,
+actually collects the quorum's partial signatures. The refund path has a
+dedicated cosign endpoint (`POST /tachi_signTransaction` / `cosignRefund`); a
+plain `buildVtxoPsbt` transfer has no equivalent exposed.
+
+**This is not simply "not enough live validators."** The signals disagree:
+`GET /health` reports `validators: 1` (consistently, polled repeatedly);
+`TachiClient.getLiveValidators()` reports `7/7`; `GET /tachi_validatorsPower`
+(the real CometBFT consensus set) shows all 7 actively voting. Whatever
+`/health`'s `validators` field measures, it isn't validator-quorum-for-cosigning
+— but the more likely explanation for the actual failure is a genuine gap in
+the documented flow: **there's no step, anywhere in the quickstart or the
+public API, that gathers node partials for a non-refund transfer.** They may
+only be obtainable via the `tachi/vault/v1` libp2p gossip topic — a much
+heavier integration than a REST call, and out of scope here.
+
+**Consequence:** ledger-level VTXO "locking" (a transfer whose destination is
+a vault address) is not currently usable through the public API, for whichever
+of these reasons. `packages/tachi-kit/src/collateral.ts` tracks collateral by
+reading the vault's real BTC balance via `bitcoind` (`scantxoutset`) instead —
+verified working in `scripts/02-spike-collateral.ts` — and redemption relies on
+the exit leaf (always works, no quorum) rather than the cooperative refund.
+`checkQuorum()` is kept as a startup/pre-flight check so the cooperative path
+can be attempted opportunistically without ever being load-bearing.
+
+### OPEN QUESTION #2 — RESOLVED (moot), 2026-08-31
 Does `locked` permit **third-party** escrow (the protocol locks a user's VTXO), or
-only self-locking by the owner? **This is the one unvalidated assumption underneath
-both products.** Validate it in Phase 2 before building on it.
+only self-locking by the owner?
+
+Turned out to be the wrong question. Neither works via the public API right now
+— see the VERIFIED note above. Ledger-level VTXO transfer of *any* kind (self or
+third-party) needs cooperative-leaf node signatures that aren't obtainable
+through documented REST calls, so it doesn't matter which locking model would
+have been chosen. The 2-of-2 fallback originally proposed below has the same
+problem — it's still a cooperative-leaf spend, still blocked. Used instead:
+bitcoind-verified collateral (`getVaultBalanceSats`), no ledger transfer needed.
+
+<details>
+<summary>Original question and fallback, for the record</summary>
 
 **Fallback if third-party locking is not supported:** collateral becomes a VTXO sent
 to a 2-of-2 protocol/user TAURUS vault. Same self-custody guarantees (the user still
 holds an exit leaf), more PSBT plumbing. This fallback is known-good — do not block
 on the answer, just budget an extra day if it lands.
+
+</details>
 
 ### Route naming (**VERIFIED** — camelCase, `tachi_` prefix)
 | Route | Works |
@@ -262,7 +355,7 @@ in both products goes through this. Wrap it once; never inline it.
 ```bash
 # local regtest bitcoind (required — hosted regtest has no bitcoind)
 bitcoind -regtest -daemon -rpcuser=tachi -rpcpassword=tachi \
-  -rpcport=18443 -fallbackfee=0.0001
+  -rpcport=18443 -fallbackfee=0.0001 -txindex=1
 bitcoin-cli -regtest -rpcuser=tachi -rpcpassword=tachi createwallet dev
 bitcoin-cli -regtest -rpcuser=tachi -rpcpassword=tachi -generate 101  # mature coinbase
 

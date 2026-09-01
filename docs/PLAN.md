@@ -56,24 +56,36 @@ committing.
 **If this phase fails,** the SDKs are broken — raise it with the Tachi team
 immediately rather than working around it.
 
-## Phase 2 — VTXO movement + the collateral primitive
+## Phase 2 — collateral tracking + risk math
+
+**Revised from the original VTXO-transfer plan.** OPEN QUESTION #2 turned out
+to be the wrong question — see `BACKGROUND.md`'s VERIFIED notes. Ledger-level
+VTXO transfers (locking or unlocking, self or third-party) need cooperative-leaf
+node signatures that aren't obtainable through the documented public API at
+all, for either of two possible reasons (validator-liveness signals disagree,
+and there's no exposed step for collecting non-refund cosign partials). So
+collateral is tracked off Bitcoin directly instead — no ledger transfer needed.
 
 - `tachi-kit/vtxo.ts` — the canonical 7-call sequence from `BACKGROUND.md` §7, as
-  one function. **Includes nonce management** — nonces are sequential per account and
-  concurrent operations will collide without a serializer.
-- `tachi-kit/collateral.ts` — `lock()`, `unlock()`, `seize()`; read side via
-  `getLockedVtxos(vault)`
-- **Resolve OPEN QUESTION #2 here.** Does `locked` permit *third-party* escrow, or
-  only self-locking? Write a test that attempts to lock a VTXO the protocol does not
-  own. If it fails, switch to the fallback: collateral is a VTXO sent to a 2-of-2
-  protocol/user TAURUS vault. Same guarantees, more PSBT plumbing, ~1 extra day.
-- `tachi-kit/health.ts` — pure LTV / collateral-ratio / liquidation-price math.
+  one function, kept for when the cooperative path is usable. **Includes nonce
+  management** — nonces are sequential per account and concurrent operations
+  will collide without a serializer.
+- `tachi-kit/collateral.ts` — `getVaultBalanceSats()` reads a vault's real BTC
+  balance via `bitcoind` `scantxoutset` (no quorum required — this is what
+  Phase 1's spike already proved). `checkQuorum()` reports live validator count
+  so the cooperative path can be attempted opportunistically later, never
+  load-bearing. `getLockedCollateral()` (the VTXO-ledger read) is kept as an
+  optional, best-effort cross-check only. No `seize()` — nothing can move a
+  borrower's BTC without their own signature (see Phase 4).
+- `tachi-kit/health.ts` — pure LTV / collateral-ratio / delinquency-price math.
   **No network calls.** This is the most heavily tested file in the repo; both
   products' risk logic sits on it.
 - `test/health.test.ts` — boundary cases: exactly 150%, exactly 130%, zero debt,
   dust collateral, price = 0, integer/rounding safety (use bigint sats throughout)
 
-**Exit criteria:** a VTXO locked and unlocked on the live ledger; `pnpm test` green.
+**Exit criteria:** `scripts/02-spike-collateral.ts` confirms a vault's balance is
+tracked correctly via bitcoind across a deposit, with no quorum involved;
+`pnpm test` green.
 
 ## Phase 3 — Engine: CDPs, mint, redeem
 
@@ -93,21 +105,36 @@ immediately rather than working around it.
 
 **Exit criteria:** mint → redeem round-trips, and BTC returns to the user's vault.
 
-## Phase 4 — Risk: oracle, liquidation, keeper
+## Phase 4 — Risk: oracle, delinquency, keeper
+
+**No forced liquidation.** Confirmed during Phase 2 research (see
+`BACKGROUND.md`'s VTXO-locking findings): every TAURUS vault spending path —
+cooperative *and* exit — requires the owner's own signature, unconditionally.
+There is no admin key, no covenant, nothing that lets a third party move a
+borrower's BTC without their cooperation. Real forced liquidation needs
+programmable, non-owner custody (what MakerDAO's contract-held collateral gives
+it); Tachi doesn't have that, by design, and neither do we. This is soft
+liquidation instead — see the README's Mechanics section for the full rationale.
 
 - `tachi-kit/oracle.ts` — BTC/USD, signed and timestamped, **with a staleness guard**
   that halts minting when the feed is stale. A manual override is required for the
   demo price drop; keep it behind an explicit dev flag.
-- `engine/liquidation.ts` — deterministic. Below 130%, auction the locked VTXOs;
-  keeper pays satUSD, receives BTC at an 8% discount, surplus returns to the borrower.
-- `engine/keeper.ts` — standalone bot, exactly like a third party would run it. Do not
-  privilege it with internal access; it uses the public API. That is the point.
+- `engine/liquidation.ts` — deterministic. Below 130%, mark the CDP `delinquent`:
+  block new mints against it, escalate its stability fee. No BTC moves. The CDP
+  stays delinquent, visible on `/liquidations` and `/reserves`, until the borrower
+  repays — or, if they never do, it is reported plainly as bad debt.
+- `engine/keeper.ts` — standalone bot, exactly like a third party would run it. It
+  watches oracle prices and calls the engine's public `mark-delinquent` endpoint,
+  which independently re-checks the price before accepting the flag (a keeper
+  cannot lie a healthy CDP into delinquency). No privileged access — the point is
+  that this bot could not do anything more even if we wanted it to.
 - `tachi-kit/events.ts` — `tachi.watch({vault})` for live position updates instead of
   polling
 - `scripts/demo-liquidate.ts` — scripted price drop through the band; asserts the
-  position closes and the protocol is whole
+  CDP is marked delinquent, new mints are blocked, and the fee escalates
 
-**Exit criteria:** `pnpm demo:liquidate` closes an underwater position end to end.
+**Exit criteria:** `pnpm demo:liquidate` runs a CDP through the delinquency
+transition end to end, honestly, with no BTC seized from anyone.
 
 ## Phase 5 — Web app
 
@@ -126,9 +153,10 @@ this is what "verifiable" means to a judge, and it is checked on stage.
 The differentiator. Make it excellent.
 
 - `tachi-kit/proofs.ts` — `getTransaction(hash, {hat, rip})` → typed receipt objects
-- `tachi-kit/reserves.ts` — sum locked VTXOs vs issued liabilities
+- `tachi-kit/reserves.ts` — sum vault BTC balances (bitcoind `scantxoutset`, same
+  as `collateral.ts`) vs issued liabilities
 - `/reserves` page: every protocol vault P2TR address with its live Bitcoin balance
-  (via the bitcoind proxy), total locked sats vs satUSD supply, live global CR,
+  (via the bitcoind proxy), total vault sats vs satUSD supply, live global CR,
   per-mint HAT proof + anchoring RIP with txids
 - **"Verify it yourself"** — a client-side recomputation from public RPC only, with
   **zero calls to our server**. This is the whole point; do not shortcut it by
@@ -166,7 +194,7 @@ running, self-custody is not real and the claim must be withdrawn.
 | Command | Scope |
 |---|---|
 | `pnpm test` | Pure math: `health.ts`, fee index, liquidation triggers. No network. |
-| `pnpm spike` | Live regtest: vault, deposit, VTXO transfer, HAT proof |
+| `pnpm spike` | Live regtest: vault, deposit, bitcoind-verified balance |
 | `pnpm demo:liquidate` | Price drop → liquidation → protocol whole |
 | `pnpm demo:exit` | Engine stopped → 1008 blocks → user sweeps own BTC |
 | `pnpm verify:reserves` | Reserves recomputed from public RPC only |
@@ -182,7 +210,7 @@ the app boots against `tachi-signet-1`.
 |---|---|
 | SDKs are v0.x, thinly documented | Phase 1 is a pure spike before any product code. Pin exact versions. |
 | Hosted regtest has no bitcoind (404) | Run `bitcoind -regtest` locally. Already in bootstrap. |
-| Third-party VTXO locking may not be supported | Phase 2 resolves it. Fallback: 2-of-2 protocol/user vault, ~1 extra day. |
-| Cooperative leaf needs 5-of-7 validators; `/health` reports `validators: 1` | Check `getLiveValidators()` at startup and degrade loudly. The exit path always works. |
+| Ledger-level VTXO locking doesn't work via the public API — **confirmed in Phase 2**, not just a risk | Track collateral via `bitcoind` (`scantxoutset`) instead. No fallback plumbing needed; already built and spiking green. |
+| Cooperative leaf needs 5-of-7 validators; live signals disagree (`/health`→1, `getLiveValidators()`→7/7) and no non-refund cosign endpoint is exposed regardless | `checkQuorum()` at startup, attempted opportunistically, never load-bearing. The exit path always works and is what redemption actually relies on. |
 | Nonce collisions under concurrency | Serialize per-account nonces in the engine from Phase 2. |
 | Judges expect on-chain contracts | Lead with the honest architecture section and the exit demo. |
