@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@satusd/engine':
+        specifier: workspace:*
+        version: link:packages/engine
       '@satusd/tachi-kit':
         specifier: workspace:*
         version: link:packages/tachi-kit

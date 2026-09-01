@@ -17,6 +17,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@satusd/engine": "workspace:*",
     "@satusd/tachi-kit": "workspace:*",
     "@scure/btc-signer": "2.4.1",
     "@tachibtc/tachi-sdk-ts": "0.2.1",

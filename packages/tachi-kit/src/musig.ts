@@ -88,14 +88,19 @@ export function createAggSigner(args: CreateAggSignerArgs): AggSigner {
   const localIndex = agg.publicKeys.findIndex((p) => p.equals(localPub));
   if (localIndex === -1) throw new Error("local pubkey missing from its own aggregate — sortKeys mismatch");
 
-  async function signSchnorr(sighash: Buffer): Promise<Buffer> {
-    const msg = sighash;
+  async function signSchnorr(sighashInput: Buffer): Promise<Buffer> {
+    // bitcoinjs-lib v7 hands back a plain Uint8Array here despite the
+    // `Buffer` type, at least on the PSBT (exit/unilateral-exit) signing
+    // path — Uint8Array#toString silently ignores an encoding argument and
+    // produces "91,36,93,..." instead of hex, which corrupts everything
+    // downstream (exchange transport, logging). Coerce once, at the door.
+    const msg = Buffer.from(sighashInput);
     const localNonce = nonceGen(localPub, args.localSecret, agg.xOnly, msg);
-    const remotePublicNonce = await args.exchange.exchangeNonce(Buffer.from(localNonce.public), sighash);
+    const remotePublicNonce = await args.exchange.exchangeNonce(Buffer.from(localNonce.public), msg);
     const aggNonce = nonceAggregate([localNonce.public, remotePublicNonce]) as Uint8Array;
     const session = new Session(aggNonce, agg.publicKeys as Buffer[], msg);
     const localPartial = session.sign(localNonce.secret, args.localSecret);
-    const remotePartial = await args.exchange.exchangePartialSig(Buffer.from(localPartial), sighash);
+    const remotePartial = await args.exchange.exchangePartialSig(Buffer.from(localPartial), msg);
 
     const partials: Uint8Array[] = [];
     partials[localIndex] = localPartial;
