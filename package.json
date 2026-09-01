@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@satusd/tachi-kit": "workspace:*",
+    "@scure/btc-signer": "2.4.1",
     "@tachibtc/tachi-sdk-ts": "0.2.1",
     "@tachibtc/taurus-vault-core": "0.3.4",
     "@tachibtc/taurus-wallet-aggregator": "0.4.5",
