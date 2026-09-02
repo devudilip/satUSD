@@ -16,6 +16,7 @@
     "./keeper.js": "./src/keeper.ts"
   },
   "dependencies": {
+    "@fastify/static": "^10.1.3",
     "@satusd/tachi-kit": "workspace:*",
     "fastify": "^5.1.0"
   }

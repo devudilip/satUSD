@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>satUSD — engine dashboard</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b0d10;
+    --panel: #14171c;
+    --border: #262b33;
+    --text: #e6e9ee;
+    --muted: #8a93a3;
+    --green: #3ddc84;
+    --red: #ff5c5c;
+    --amber: #ffb454;
+    --accent: #5b9dff;
+    --mono: "SF Mono", ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: 32px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); margin: 0 0 24px; font-size: 13px; }
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 24px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .dot.dead { background: var(--red); box-shadow: 0 0 8px var(--red); }
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .card .value { font-family: var(--mono); font-size: 20px; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left;
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-family: var(--mono); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .mono-trunc { display: inline-block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-family: var(--mono); }
+  .badge.open { background: rgba(61,220,132,0.15); color: var(--green); }
+  .badge.liquidated { background: rgba(255,92,92,0.15); color: var(--red); }
+  .badge.closed { background: rgba(138,147,163,0.15); color: var(--muted); }
+  .badge.no { background: rgba(255,180,84,0.15); color: var(--amber); }
+  .badge.yes { background: rgba(61,220,132,0.15); color: var(--green); }
+  .empty { color: var(--muted); padding: 24px; text-align: center; font-style: italic; }
+  .txid { color: var(--accent); }
+  footer { margin-top: 32px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>satUSD — engine dashboard</h1>
+  <p class="subtitle">Polls the engine's own public API every 1.5s. Nothing here is precomputed — it's whatever <code>GET /cdp</code> answers right now.</p>
+
+  <div class="status-bar">
+    <span class="dot dead" id="status-dot"></span>
+    <span id="status-text">connecting…</span>
+  </div>
+
+  <div class="summary" id="summary"></div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Vault</th>
+        <th>Owner (individual key)</th>
+        <th>Collateral</th>
+        <th>Principal</th>
+        <th>Status</th>
+        <th>exit_tx delivered</th>
+        <th>State n</th>
+        <th>Liquidation txid-to-be</th>
+      </tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="empty" id="empty" hidden>No CDPs yet — open one to see it appear here.</div>
+
+  <footer>Engine URL: <span id="engine-url"></span> — this page is served by the engine itself, same origin, no build step.</footer>
+
+<script>
+  const engineUrl = window.location.origin;
+  document.getElementById("engine-url").textContent = engineUrl;
+
+  function truncate(s, n = 18) {
+    if (!s) return "—";
+    return s.length > n ? s.slice(0, n) + "…" : s;
+  }
+
+  function fmtSats(s) {
+    const n = BigInt(s);
+    return n.toLocaleString("en-US") + " sats";
+  }
+
+  function fmtUsd(cents) {
+    const n = Number(BigInt(cents)) / 100;
+    return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2 });
+  }
+
+  function setLive(live) {
+    const dot = document.getElementById("status-dot");
+    const text = document.getElementById("status-text");
+    dot.className = "dot " + (live ? "live" : "dead");
+    text.textContent = live ? "engine live at " + engineUrl : "engine unreachable — expected once it's killed for the exit demo";
+  }
+
+  function renderSummary(cdps) {
+    const totalCollateral = cdps.reduce((a, c) => a + BigInt(c.collateralSats), 0n);
+    const totalPrincipal = cdps.reduce((a, c) => a + BigInt(c.principalUsdCents), 0n);
+    const openCount = cdps.filter((c) => c.status === "open").length;
+    const liquidatedCount = cdps.filter((c) => c.status === "liquidated").length;
+    const el = document.getElementById("summary");
+    el.innerHTML = `
+      <div class="card"><div class="label">CDPs</div><div class="value">${cdps.length}</div></div>
+      <div class="card"><div class="label">Open</div><div class="value">${openCount}</div></div>
+      <div class="card"><div class="label">Liquidated</div><div class="value">${liquidatedCount}</div></div>
+      <div class="card"><div class="label">Total collateral</div><div class="value">${fmtSats(totalCollateral)}</div></div>
+      <div class="card"><div class="label">Total principal</div><div class="value">${fmtUsd(totalPrincipal)}</div></div>
+    `;
+  }
+
+  function renderRows(cdps) {
+    const tbody = document.getElementById("rows");
+    const empty = document.getElementById("empty");
+    if (cdps.length === 0) {
+      tbody.innerHTML = "";
+      empty.hidden = false;
+      return;
+    }
+    empty.hidden = true;
+    tbody.innerHTML = cdps
+      .map((c) => {
+        const badgeClass = c.status === "open" ? "open" : c.status === "liquidated" ? "liquidated" : "closed";
+        const exitBadge = c.exitTxDelivered ? '<span class="badge yes">yes</span>' : '<span class="badge no">no</span>';
+        const state = c.latestState;
+        return `
+          <tr>
+            <td><span class="mono-trunc" title="${c.vaultAddress}">${truncate(c.vaultAddress, 22)}</span></td>
+            <td><span class="mono-trunc" title="${c.ownerIndividualPub}">${truncate(c.ownerIndividualPub, 16)}</span></td>
+            <td>${fmtSats(c.collateralSats)}</td>
+            <td>${fmtUsd(c.principalUsdCents)}</td>
+            <td><span class="badge ${badgeClass}">${c.status}</span></td>
+            <td>${exitBadge}</td>
+            <td>${state ? state.n : "—"}</td>
+            <td>${state ? `<span class="txid" title="${state.liquidationTxidToBe}">${truncate(state.liquidationTxidToBe, 22)}</span>` : "—"}</td>
+          </tr>
+        `;
+      })
+      .join("");
+  }
+
+  async function poll() {
+    try {
+      const res = await fetch(engineUrl + "/cdp");
+      if (!res.ok) throw new Error("bad response");
+      const { cdps } = await res.json();
+      setLive(true);
+      renderSummary(cdps);
+      renderRows(cdps);
+    } catch {
+      setLive(false);
+    }
+  }
+
+  poll();
+  setInterval(poll, 1500);
+</script>
+</body>
+</html>
