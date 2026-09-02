@@ -4,6 +4,17 @@
   "private": true,
   "type": "module",
   "main": "src/server.ts",
+  "exports": {
+    ".": "./src/server.ts",
+    "./server.js": "./src/server.ts",
+    "./musig-server.js": "./src/musig-server.ts",
+    "./routes.js": "./src/routes.ts",
+    "./cdp.js": "./src/cdp.ts",
+    "./ledger.js": "./src/ledger.ts",
+    "./fees.js": "./src/fees.ts",
+    "./liquidation.js": "./src/liquidation.ts",
+    "./keeper.js": "./src/keeper.ts"
+  },
   "dependencies": {
     "@satusd/tachi-kit": "workspace:*",
     "fastify": "^5.1.0"

@@ -1,18 +1,23 @@
 import Fastify from "fastify";
+import type { BitcoinCoreRpcClient } from "@tachibtc/taurus-wallet-aggregator";
+import type { PriceFeed } from "@satusd/tachi-kit";
 import { createHttpMusigExchange } from "./musig-server.js";
+import { registerCdpRoutes } from "./routes.js";
+import type { CdpEngine } from "./cdp.js";
 
-/**
- * Minimal engine entry point. CDP routes land in Phase 3 (engine/cdp.ts,
- * ledger.ts, fees.ts); this exists first to carry the MuSig2 HTTP exchange
- * (Task 4) so scripts/06-spike-http-musig.ts and scripts/borrower.ts have
- * something real to talk to.
- */
-export function buildServer() {
+export interface BuildServerOptions {
+  /** Mounts /cdp routes when supplied. Omitted by spike 06, which only needs the MuSig2 exchange. */
+  readonly cdp?: { readonly cdpEngine: CdpEngine; readonly priceFeed: PriceFeed; readonly rpc: BitcoinCoreRpcClient };
+}
+
+export function buildServer(options: BuildServerOptions = {}) {
   const app = Fastify({ logger: false });
   app.get("/health", async () => ({ status: "ok" }));
 
   const musig = createHttpMusigExchange();
   musig.routes(app);
+
+  if (options.cdp) registerCdpRoutes(app, options.cdp);
 
   return { app, musigExchange: musig.exchange };
 }
