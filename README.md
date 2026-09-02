@@ -197,6 +197,7 @@ demos. **Demo on regtest, prove on signet.**
 | [`docs/PLAN.md`](docs/PLAN.md) | Phased build plan, file by file |
 | [`docs/DEMO.md`](docs/DEMO.md) | The 5-minute demo script |
 | [`docs/TACHI-TEAM-QUESTIONS.md`](docs/TACHI-TEAM-QUESTIONS.md) | Open questions for the Tachi team |
+| [`docs/SUBMISSION.md`](docs/SUBMISSION.md) | What was proven, what was faked (nothing), what's next |
 
 Sibling project: [`../kosen`](../kosen) — BTC lending market (Bounty #4).
 Shared conventions: [`../SHARED-CONTEXT.md`](../SHARED-CONTEXT.md).
