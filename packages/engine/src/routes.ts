@@ -57,6 +57,9 @@ function publicView(cdp: ReturnType<CdpEngine["all"]>[number]) {
           n: cdp.latestState.n.toString(),
           shareSats: cdp.latestState.shareSats.toString(),
           priceLiqUsdCents: cdp.latestState.priceLiqUsdCents.toString(),
+          // The liquidation txid-to-be — safe to publish (see commitment.ts's
+          // CommittedState doc comment). refundHex itself never leaves the engine.
+          liquidationTxidToBe: cdp.latestState.refundTxid,
         }
       : null,
   };

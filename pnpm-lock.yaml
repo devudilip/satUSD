@@ -66,6 +66,9 @@ importers:
       '@tachibtc/taurus-wallet-aggregator':
         specifier: 0.4.5
         version: 0.4.5(typescript@5.9.3)
+      bitcoinjs-lib:
+        specifier: 7.0.1
+        version: 7.0.1(typescript@5.9.3)
     devDependencies:
       '@noble/curves':
         specifier: ^2.4.0

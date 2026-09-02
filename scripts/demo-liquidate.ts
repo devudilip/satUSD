@@ -121,6 +121,9 @@ async function main() {
   const { issuedUsdCents, state } = await cdpEngine.mint(cdp.id, 100_000n, HEALTHY_PRICE);
   console.log(`[demo-liquidate] minted, issued $${Number(issuedUsdCents) / 100} satUSD, state n=${state.n}`);
   console.log(`[demo-liquidate] committed share ${state.shareSats} sats at priceLiq ${state.priceLiqUsdCents} cents/BTC`);
+  console.log(
+    `[demo-liquidate] liquidation txid-to-be, announced now, before any price drop: ${state.refundTxid}`,
+  );
 
   const keeperAbort = new AbortController();
   let liquidatedTxid: string | null = null;
@@ -155,6 +158,10 @@ async function main() {
 
   if (!liquidatedTxid) throw new Error("keeper did not liquidate the CDP within 30s");
   console.log("[demo-liquidate] LIQUIDATED, txid:", liquidatedTxid);
+  if (liquidatedTxid !== state.refundTxid) {
+    throw new Error(`txid mismatch: announced ${state.refundTxid}, actually broadcast ${liquidatedTxid}`);
+  }
+  console.log("[demo-liquidate] confirmed: this is exactly the txid announced at mint time, before the price ever dropped");
 
   await rpc.call("generatetoaddress", [1, funderWallet.receiveAddress]);
   const tx = await rpc.call<{ confirmations?: number }>("getrawtransaction", [liquidatedTxid, true]);
