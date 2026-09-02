@@ -5,6 +5,7 @@
   "engines": {
     "node": ">=20"
   },
+  "packageManager": "pnpm@9.15.9",
   "scripts": {
     "bootstrap": "tsx scripts/00-bootstrap-regtest.ts",
     "spike": "tsx scripts/01-spike-vault.ts",
@@ -13,7 +14,7 @@
     "demo:liquidate": "tsx scripts/demo-liquidate.ts",
     "demo:exit": "tsx scripts/unilateral-exit.ts",
     "verify:reserves": "tsx scripts/verify-reserves.ts",
-    "dev": "echo 'engine + web dev servers land in Phase 3/5'",
+    "dev": "pnpm demo",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -31,5 +32,8 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
   }
 }

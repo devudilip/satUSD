@@ -1,12 +1,20 @@
 /**
- * Bootstrap local regtest: create a bitcoind wallet, mine 101 blocks (matures
- * the first coinbase), and fund the demo mnemonic's receive address.
+ * Bootstrap local regtest: create a bitcoind wallet, mine enough blocks to
+ * mature the demo wallet's whole coinbase set, and fund it.
  *
  * Requires bitcoind running locally — Tachi's hosted regtest has no bitcoind
  * attached (see docs/BACKGROUND.md §5):
  *
  *   bitcoind -regtest -daemon -rpcuser=tachi -rpcpassword=tachi \
  *     -rpcport=18443 -fallbackfee=0.0001 -txindex=1
+ *
+ * Mining exactly 101 blocks to one address matures only the *first* of them
+ * (COINBASE_MATURITY = 100) — the other 100 stay immature. On a chain with
+ * a lot of prior history that's invisible (coin selection has plenty of old,
+ * mature UTXOs to pick from), but on a genuinely fresh chain (a clean Docker
+ * container, say) coin selection can pick one of the immature ones and
+ * `sendrawtransaction` fails with `bad-txns-premature-spend-of-coinbase`.
+ * Mining 100 more blocks afterward matures the entire original batch.
  */
 import "dotenv/config";
 import { BitcoinCoreRpcClient, WalletAggregator } from "@tachibtc/taurus-wallet-aggregator";
@@ -44,6 +52,13 @@ async function main() {
 
   const blockHashes = await rpc.call<string[]>("generatetoaddress", [101, demoAddress]);
   console.log(`[bootstrap] mined ${blockHashes.length} blocks, matured first coinbase`);
+
+  // Mature the rest of that batch too — see the module comment above. Mine to
+  // a *different* address, or this just creates a fresh batch of immature
+  // coinbases for the demo wallet chasing its own tail.
+  const throwawayAddress = aggregator.addAccount({ addressType: "p2wpkh", account: 99 }).receiveAddress;
+  await rpc.call<string[]>("generatetoaddress", [100, throwawayAddress]);
+  console.log("[bootstrap] mined 100 more blocks (to a throwaway address), entire initial batch now matured");
 
   await demoWallet.sync();
   console.log(`[bootstrap] demo wallet balance: ${demoWallet.balance.confirmed} sats confirmed`);

@@ -123,17 +123,49 @@ to trust our server**:
 
 ## Quick start
 
+**Docker (simplest — one command, fresh regtest, no local bitcoind):**
+
+```bash
+docker compose up --build
+```
+
+Runs bitcoind (regtest) and the engine together, bootstraps a funded wallet,
+then runs [`pnpm demo`](#the-whole-story-one-run) — open a CDP, mint, real
+liquidation, kill the engine, borrower exits alone. While it's running, open
+**http://localhost:4110** to watch the live dashboard update through each
+step. Verified from a completely fresh chain, no local state required.
+
+**Local (for iterating on individual pieces):**
+
 ```bash
 # Tachi's hosted regtest has no bitcoind attached — run one locally
 bitcoind -regtest -daemon -rpcuser=tachi -rpcpassword=tachi \
   -rpcport=18443 -fallbackfee=0.0001 -txindex=1
 
 pnpm install
-pnpm bootstrap        # create wallet, mine 101 blocks, fund the demo mnemonic
+pnpm bootstrap        # create wallet, mature its coinbases, fund the demo mnemonic
 pnpm spike            # prove vault + deposit against live regtest
 pnpm spike:collateral # prove bitcoind-verified collateral tracking
-pnpm dev              # engine + web app
+pnpm demo             # the whole story — see below
 ```
+
+### The whole story, one run
+
+`pnpm demo` ([`scripts/full-demo.ts`](scripts/full-demo.ts)) walks every beat
+in [`docs/DEMO.md`](docs/DEMO.md) in sequence, printing real regtest artifacts
+at each step — nothing mocked, nothing precomputed:
+
+open a CDP (borrower gets `exit_tx` before anything else) → mint → a
+proof-of-reserves JSON snapshot with the **liquidation txid-to-be**, announced
+before any price move → crash the price → a keeper bot using nothing but the
+public API actually liquidates it, and the broadcast txid is asserted to
+match what was announced → a second CDP → **kill the engine entirely** → its
+borrower alone broadcasts the pre-signed `exit_tx`, no cooperation possible.
+
+While it runs, open **http://localhost:4110** (or whatever port you set) for
+the live dashboard — same-origin static page served by the engine itself, no
+build step, polling `GET /cdp` every 1.5s. It turns red and says so plainly
+once the engine is killed, which is the correct behavior for that step, not a bug.
 
 | Command | What it does |
 |---|---|
@@ -143,8 +175,9 @@ pnpm dev              # engine + web app
 | `npx tsx scripts/03-spike-refund-cosign.ts` | Registers a vault, cosigns a quorum-backed refund, mines it |
 | `npx tsx scripts/04-spike-musig-vault.ts` | MuSig2 owner key, pre-signed exit tx, cosigned refund — Track B end to end |
 | `npx tsx scripts/06-spike-http-musig.ts` | Same, but the MuSig2 exchange runs over real HTTP (`scripts/borrower.ts`) |
-| `pnpm demo:liquidate` | Scripted price drop past 130% → the held refund broadcasts, txid on screen |
-| `pnpm demo:exit` | **Engine and borrower responder both stopped**, mine the loan term, borrower alone broadcasts `exit_tx` |
+| `pnpm demo` | The whole story in one run, with the live dashboard — see above |
+| `pnpm demo:liquidate` | Just the liquidation beat, standalone |
+| `pnpm demo:exit` | Just the exit beat — **engine and borrower responder both stopped**, standalone |
 | `pnpm verify:reserves` | Recomputes proof-of-reserves from public RPC only |
 
 Flip to signet with `TACHI_NETWORK=signet`. Signet gives judges independently
