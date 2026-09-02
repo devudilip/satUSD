@@ -9,6 +9,7 @@
     "bootstrap": "tsx scripts/00-bootstrap-regtest.ts",
     "spike": "tsx scripts/01-spike-vault.ts",
     "spike:collateral": "tsx scripts/02-spike-collateral.ts",
+    "demo": "tsx scripts/full-demo.ts",
     "demo:liquidate": "tsx scripts/demo-liquidate.ts",
     "demo:exit": "tsx scripts/unilateral-exit.ts",
     "verify:reserves": "tsx scripts/verify-reserves.ts",
