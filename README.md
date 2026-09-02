@@ -1,14 +1,17 @@
 # satUSD
 
 **A BTC-backed stable asset on Tachi. Lock native Bitcoin in a TAURUS vault, mint
-satUSD against it, redeem it back — over-collateralized, self-custodial, and provably
-reserved on Bitcoin L1.**
+satUSD against it, redeem it back — over-collateralized, provably enforceable, and
+provably reserved on Bitcoin L1.**
 
 > OP_Freedom Hackathon · Institutional Bitcoin track · Bounty #2
 
-No wrapped BTC. No bridge. No custodian. Your collateral is a Taproot output on
-Bitcoin that **you can always sweep with your own key alone** — even if this
-protocol disappears entirely.
+No wrapped BTC. No bridge. Your collateral is a Taproot output on Bitcoin. The
+protocol is a real co-signer on it, not a bystander — that's what makes
+liquidation real, not a promise. And **before you ever get a loan, you're
+already holding a fully signed transaction that gets every satoshi back to
+you, unilaterally, once the term is up** — even if this protocol disappears
+entirely.
 
 ---
 
@@ -25,32 +28,42 @@ So satUSD is built the way the platform actually supports today:
 ```
 Bitcoin regtest/signet        Tachi ledger              satUSD engine         Next.js app
 ──────────────────────        ────────────              ─────────────         ───────────
-P2TR TAURUS vault    ───────► HAT proof per tx    ─────► CDP record      ────► Mint / Redeem
-  coop 5-of-7 leaf            RIP anchored to L1         LTV + liq price       Position health
-  exit CSV 1008 blocks        (balance read via          satUSD balance        Proof-of-reserves
-                                bitcoind, not the        delinquency tracking  Delinquency feed
-                                ledger's locked flag)
+P2TR vault, MuSig2   ───────► HAT proof per tx    ─────► collateral channel───► Mint / Repay
+  owner (you+us)              RIP anchored to L1         LTV + liq price       Position health
+  coop leaf: quorum-          quorum cosigns             satUSD balance        Proof-of-reserves
+    cosigned refund             pre-signed refunds       pre-signed exit_tx    Liquidation feed
+  exit leaf: your key,          (Track B, see
+    CSV term, presigned         COLLATERAL-MODEL.md)
 ```
 
-- **Custody is on Bitcoin.** A P2TR address with a NUMS-disabled key path and a
-  two-leaf tap tree: a cooperative 5-of-7 validator leaf for instant settlement, and
-  an exit leaf spendable by your key alone after 1008 blocks.
-- **Collateral is verified directly against Bitcoin**, not the Tachi ledger's VTXO
-  `locked` flag. We found live (see [`docs/BACKGROUND.md`](docs/BACKGROUND.md)) that
-  ledger-level VTXO transfers need cooperative-leaf validator signatures the public
-  API has no documented way to collect — so the engine reads each vault's real BTC
-  balance via `bitcoind` instead, the same way Phase 1's spike verifies a deposit.
-  No dependency on validator-quorum liveness for something as basic as "is the
-  collateral there."
+- **Custody is a joint Bitcoin key, not a single one.** Each CDP is its own P2TR
+  vault whose owner key is a **MuSig2 aggregate of your key and the protocol's**
+  (BIP-327) — see [`docs/COLLATERAL-MODEL.md`](docs/COLLATERAL-MODEL.md). A
+  cooperative leaf (quorum-cosigned) and an exit leaf (CSV timelock) both spend
+  through that joint key, so neither of us can move your BTC alone — but unlike a
+  single-key vault, the protocol *can* enforce a pre-agreed liquidation, because
+  it's a genuine co-signer.
+- **You get an unconditional exit anyway.** At open, before any loan asset is
+  released, you receive a fully agg-signed `exit_tx` — spendable by broadcasting it
+  alone, no protocol cooperation, once the loan term (the exit leaf's CSV delay)
+  has passed. If we vanish, that's what you use. Verified live, engine process
+  killed mid-flow: [`scripts/05-spike-exit-presigned.ts`](scripts/05-spike-exit-presigned.ts).
+- **We get real enforcement anyway.** Every time your position's debt changes, we
+  jointly sign a fresh liquidation refund (`commitState`) — quorum-cosigned, held,
+  never broadcast unless you actually cross the liquidation threshold. Verified
+  live: [`scripts/03-spike-refund-cosign.ts`](scripts/03-spike-refund-cosign.ts).
+- **Collateral is also verified directly against Bitcoin**, independent of any of
+  the above, via `bitcoind` `scantxoutset` — a second, quorum-free check for
+  proof-of-reserves, never the custody mechanism itself.
 - **Protocol logic runs off-chain**, deterministically, in an append-only hash-chained
   ledger whose state roots are broadcast to the Tachi ledger — tamper-evident history.
-- **satUSD is a protocol-issued balance**, keyed to your Schnorr x-only pubkey (the
-  same identity as the VTXO `owner` field), transferable by signed transfer. It is
-  **not** a native token, because Tachi has no asset-issuance primitive. We say so
-  rather than pretending otherwise.
+- **satUSD is a protocol-issued balance**, keyed to your Schnorr x-only pubkey,
+  transferable by signed transfer. It is **not** a native token, because Tachi has
+  no asset-issuance primitive. We say so rather than pretending otherwise.
 
 What we can prove that a wrapped-BTC stablecoin cannot: **kill the protocol and the
-user still gets their Bitcoin back.** That is the demo.
+user still gets their Bitcoin back — even though the protocol was a real co-signer
+the whole time.** That is the demo.
 
 ---
 
@@ -58,36 +71,36 @@ user still gets their Bitcoin back.** That is the demo.
 
 | Parameter | Value |
 |---|---|
-| Minimum collateral ratio | 150% |
-| Delinquency threshold | < 130% |
-| Delinquent stability fee | 8% APR (escalated) |
+| Minimum collateral ratio to mint | 150% |
+| Liquidation threshold (LLTV) | 130% |
+| Liquidation penalty | 8% |
+| Loan term (exit leaf CSV) | demo: 144 blocks (~1 day); production tiers 1008/4320 |
 | Mint fee | 0.1% |
-| Base stability fee | 2% APR, accrued per block |
+| Stability fee | 2% APR, accrued per block |
 
-- **Mint** — deposit BTC → your own CDP vault → engine confirms the balance via
-  `bitcoind` and issues satUSD, recording `{vaultAddress, principal, feeIndex,
-  hatProof}`.
-- **Redeem** — burn satUSD + accrued fee → sweep your own vault via the exit leaf
-  (works unconditionally, no quorum) → BTC returns to your own wallet. Fast
-  cooperative redemption is attempted opportunistically when the validator quorum
-  is live, but is never required.
-- **Liquidation is soft, by design, not by omission.** TAURUS vaults require the
-  owner's own signature on every spending path — cooperative *or* exit — with no
-  exception. That is the self-custody guarantee this whole project is built on, and
-  it means **no third party, including us, can ever move your BTC without your
-  signature.** So there is no seizure mechanism: it would require exactly the kind
-  of programmable, non-owner custody Tachi does not have (see
-  [`docs/BACKGROUND.md`](docs/BACKGROUND.md)). Below 130% CR, a CDP is marked
-  **delinquent**: new mints against it are blocked and its stability fee escalates.
-  It stays delinquent — visible, not hidden — until the borrower repays. If they
-  never do, it is real bad debt, reported plainly on `/reserves`. A keeper bot
-  watches prices and flags delinquent CDPs using only the public API, same as
-  everyone else — it has no special power because none exists to grant it.
-- **Peg defense** is arbitrage, not force. If satUSD trades under $1, existing
-  borrowers are incentivized to buy it cheap and repay their own debt for more BTC
-  value than they spent. If it trades over $1, new borrowers are incentivized to
-  mint and sell. Both directions work on each borrower's own collateral, by their
-  own choice — nothing here ever touches collateral that isn't the actor's own.
+- **Open** — deposit BTC into a MuSig2 vault (you + protocol) → the borrower
+  receives a fully agg-signed `exit_tx` before anything else happens → only then
+  does the engine issue satUSD.
+- **Borrow / repay / accrue** — every change to your debt commits a fresh
+  liquidation refund (`commitState`): quorum-cosigned, split between your
+  revocable remainder and the protocol's liquidation share, held and never
+  broadcast unless actually triggered.
+- **Liquidation is real** — cross the 130% threshold, and the held refund for
+  your current state gets broadcast. Deterministic, no judgment call: anyone
+  with the hex can do it, including a keeper bot using only the public API. The
+  txid is the receipt, shown on `/reserves` next to your position before it
+  ever happens.
+- **Redeem / close** — debt at zero, commit a final state paying your full
+  remaining balance back to you and broadcast it. Requires your cooperation
+  (same as any state), but so does the protocol's — neither of us can close a
+  channel unilaterally.
+- **The unconditional fallback** — your `exit_tx`, held since open, always
+  works after the CSV term, no cooperation needed, whether or not we're still
+  running.
+- **Peg defense** is arbitrage. If satUSD trades under $1, existing borrowers
+  are incentivized to buy it cheap and repay their own debt for more BTC value
+  than they spent. If it trades over $1, new borrowers are incentivized to mint
+  and sell.
 
 ## Proof of reserves
 
@@ -99,6 +112,9 @@ to trust our server**:
 - total vault BTC sats (verified via `bitcoind`) vs total satUSD issued → live
   global collateral ratio
 - per-mint HAT proof and the RIP anchoring it to Bitcoin L1, each with its txid
+- every open position's current state number and its **liquidation txid-to-be** —
+  the hash of the exact refund that fires if it crosses the threshold, visible
+  before it ever happens
 - a **"verify it yourself"** button that re-derives the entire figure client-side from
   public RPC only
 - a downloadable JSON attestation
@@ -122,13 +138,17 @@ pnpm dev              # engine + web app
 | Command | What it does |
 |---|---|
 | `pnpm test` | Vitest over the pure risk math — no network |
-| `pnpm spike` | Creates a vault, deposits, transfers a VTXO, prints txid + HAT proof |
-| `pnpm demo:liquidate` | Scripted price drop → CDP marked delinquent, fee escalates, mint blocked |
-| `pnpm demo:exit` | **Engine stopped**, mine 1008 blocks, user sweeps their own BTC |
+| `pnpm spike` | Creates a vault, deposits, prints txid + HAT proof |
+| `pnpm spike:collateral` | Confirms bitcoind-verified collateral tracking |
+| `npx tsx scripts/03-spike-refund-cosign.ts` | Registers a vault, cosigns a quorum-backed refund, mines it |
+| `npx tsx scripts/04-spike-musig-vault.ts` | MuSig2 owner key, pre-signed exit tx, cosigned refund — Track B end to end |
+| `npx tsx scripts/06-spike-http-musig.ts` | Same, but the MuSig2 exchange runs over real HTTP (`scripts/borrower.ts`) |
+| `pnpm demo:liquidate` | Scripted price drop past 130% → the held refund broadcasts, txid on screen |
+| `pnpm demo:exit` | **Engine and borrower responder both stopped**, mine the loan term, borrower alone broadcasts `exit_tx` |
 | `pnpm verify:reserves` | Recomputes proof-of-reserves from public RPC only |
 
 Flip to signet with `TACHI_NETWORK=signet`. Signet gives judges independently
-verifiable reserves; regtest gives you mineable blocks for the delinquency and exit
+verifiable reserves; regtest gives you mineable blocks for the liquidation and exit
 demos. **Demo on regtest, prove on signet.**
 
 ---
@@ -139,9 +159,11 @@ demos. **Demo on regtest, prove on signet.**
 |---|---|
 | [`docs/AGENT-BRIEF.md`](docs/AGENT-BRIEF.md) | **Start here.** Orientation for whoever picks this up |
 | [`docs/BACKGROUND.md`](docs/BACKGROUND.md) | Tachi research, verified live-infra probes, open questions |
+| [`docs/COLLATERAL-MODEL.md`](docs/COLLATERAL-MODEL.md) | The Track B design: MuSig2 joint vaults, pre-signed exit + liquidation |
 | [`docs/TACHI-API.md`](docs/TACHI-API.md) | SDK + RPC cheat sheet, only what's confirmed to exist |
 | [`docs/PLAN.md`](docs/PLAN.md) | Phased build plan, file by file |
 | [`docs/DEMO.md`](docs/DEMO.md) | The 5-minute demo script |
+| [`docs/TACHI-TEAM-QUESTIONS.md`](docs/TACHI-TEAM-QUESTIONS.md) | Open questions for the Tachi team |
 
 Sibling project: [`../kosen`](../kosen) — BTC lending market (Bounty #4).
 Shared conventions: [`../SHARED-CONTEXT.md`](../SHARED-CONTEXT.md).
