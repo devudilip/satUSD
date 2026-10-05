@@ -188,7 +188,7 @@ demos. **Demo on regtest, prove on signet.**
 
 ## Demo
 
-**[▶ Watch the 2-minute demo](https://github.com/devudilip/satUSD/blob/main/demo/satusd-demo.mp4)** · [screenshots](demo/README.md)
+**[▶ Watch the 2-minute demo](https://github.com/devudilip/satUSD/blob/main/demo/satusd-demo.mp4)** · **[▶ 39-second pitch](https://github.com/devudilip/satUSD/blob/main/demo/satusd-pitch-39s.mp4)** · [screenshots](demo/README.md)
 
 [![dashboard](demo/01-dashboard-liquidated.png)](demo/README.md)
 

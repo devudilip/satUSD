@@ -1,6 +1,8 @@
 # satUSD — demo
 
-**Video (2:11):** [satusd-demo.mp4](https://github.com/devudilip/satUSD/blob/main/demo/satusd-demo.mp4) — click to play in the browser.
+**Pitch (0:39):** [satusd-pitch-39s.mp4](https://github.com/devudilip/satUSD/blob/main/demo/satusd-pitch-39s.mp4) — what it is and what problem it solves.
+
+**Full demo (2:11):** [satusd-demo.mp4](https://github.com/devudilip/satUSD/blob/main/demo/satusd-demo.mp4) — click to play in the browser.
 
 Recorded 2026-10-03 from a live `pnpm demo` run against `rpc-regtest.tachibtc.com` plus a local `bitcoind -regtest`. Every txid shown is real.
 
