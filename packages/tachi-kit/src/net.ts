@@ -45,8 +45,33 @@ export function createTachiClient(config: NetworkConfig): TachiClient {
   return new TachiClient({ baseUrl: config.tachiUrl, timeoutMs: 30_000 });
 }
 
+/**
+ * Bitcoin Core runs one `scantxoutset` at a time per node. On signet the node
+ * is Tachi's shared hosted proxy, so any other user's scan makes ours fail
+ * with "Scan already in progress". The wallet aggregator retries for ~14s;
+ * this client retries every scan (the aggregator's and the kit's own
+ * balance reads) for up to ~2 minutes before giving up.
+ */
+const SCAN_BUSY_RETRY_MS = 3_000;
+const SCAN_BUSY_MAX_WAIT_MS = 120_000;
+
+class SharedNodeRpcClient extends BitcoinCoreRpcClient {
+  override async call<T = unknown>(method: string, params: unknown[] = []): Promise<T> {
+    const deadline = Date.now() + SCAN_BUSY_MAX_WAIT_MS;
+    for (;;) {
+      try {
+        return await super.call<T>(method, params);
+      } catch (err) {
+        const busy = method === "scantxoutset" && /scan already in progress/i.test(String((err as Error)?.message));
+        if (!busy || Date.now() > deadline) throw err;
+        await new Promise((r) => setTimeout(r, SCAN_BUSY_RETRY_MS));
+      }
+    }
+  }
+}
+
 export function createBitcoinRpcClient(config: NetworkConfig): BitcoinCoreRpcClient {
-  return new BitcoinCoreRpcClient({
+  return new SharedNodeRpcClient({
     url: config.bitcoinRpc.url,
     username: config.bitcoinRpc.username,
     password: config.bitcoinRpc.password,

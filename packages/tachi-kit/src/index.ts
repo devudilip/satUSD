@@ -7,3 +7,4 @@ export * from "./musig.js";
 export * from "./commitment.js";
 export * from "./events.js";
 export * from "./oracle.js";
+export * from "./chain.js";

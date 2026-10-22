@@ -30,6 +30,10 @@ import {
   aggregateKey,
   DevPriceFeed,
   type MusigExchange,
+  demoMnemonic,
+  demoCsvBlocks,
+  waitForConfirmation,
+  explorerTxUrl,
 } from "@satusd/tachi-kit";
 
 function createLocalCounterpartyExchange(
@@ -58,7 +62,6 @@ function createLocalCounterpartyExchange(
   };
 }
 
-const CSV_BLOCKS = 144;
 const DEPOSIT = 300_000n; // 0.003 BTC
 const LLTV_BPS = 13_000n; // 130%
 const PENALTY_BPS = 800n; // 8%
@@ -66,14 +69,15 @@ const HEALTHY_PRICE = 100_000_000n; // $1,000,000/BTC — deliberately high so a
 const ENGINE_PORT = 4102;
 
 async function main() {
-  const config = resolveNetworkConfig("regtest");
+  const config = resolveNetworkConfig();
+  const CSV_BLOCKS = demoCsvBlocks(config); // 144 on regtest, 3 on signet — see tachi-kit chain.ts
   const tachi = createTachiClient(config);
   await assertTachiReachable(tachi, config);
   console.log("[demo-liquidate] quorum:", await checkQuorum(tachi));
 
-  const mnemonic = process.env.DEMO_MNEMONIC!;
+  const mnemonic = demoMnemonic(config);
   const rpc = createBitcoinRpcClient(config);
-  const aggregator = WalletAggregator.fromMnemonic(mnemonic, { network: "regtest", rpc });
+  const aggregator = WalletAggregator.fromMnemonic(mnemonic, { network: config.network, rpc });
   const funderWallet = aggregator.addAccount({ addressType: "p2wpkh" });
   await funderWallet.sync();
   const protocolTreasury = aggregator.addAccount({ addressType: "p2wpkh", account: 1 });
@@ -163,10 +167,8 @@ async function main() {
   }
   console.log("[demo-liquidate] confirmed: this is exactly the txid announced at mint time, before the price ever dropped");
 
-  await rpc.call("generatetoaddress", [1, funderWallet.receiveAddress]);
-  const tx = await rpc.call<{ confirmations?: number }>("getrawtransaction", [liquidatedTxid, true]);
-  if (!tx.confirmations || tx.confirmations < 1) throw new Error("liquidation txid did not confirm");
-  console.log("[demo-liquidate] confirmed on-chain, confirmations:", tx.confirmations);
+  const height = await waitForConfirmation(config, rpc, liquidatedTxid, funderWallet.receiveAddress);
+  console.log("[demo-liquidate] confirmed on-chain in block", height, explorerTxUrl(config, liquidatedTxid) ?? "");
 
   console.log(`[demo-liquidate] ledger has ${ledger.length} records, chain verifies: ${ledger.verify()}`);
   console.log("[demo-liquidate] PASS — engine + keeper (public API only) closed an underwater position for real");

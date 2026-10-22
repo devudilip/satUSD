@@ -135,7 +135,18 @@ liquidation, kill the engine, borrower exits alone. While it's running, open
 **http://localhost:4110** to watch the live dashboard update through each
 step. Verified from a completely fresh chain, no local state required.
 
-**Local (for iterating on individual pieces):**
+**Signet (public chain, no local bitcoind — the default network):**
+
+```bash
+pnpm install
+pnpm signet:wallet    # creates a private signet wallet in .env, prints its address
+# fund it from https://faucet.tachibtc.com, wait one block
+pnpm demo:signet      # the whole story on public signet, ~1 hour of real blocks
+```
+
+Every txid it prints opens on mempool.space/signet. See [`docs/SIGNET.md`](docs/SIGNET.md).
+
+**Local regtest (for iterating on individual pieces):**
 
 ```bash
 # Tachi's hosted regtest has no bitcoind attached — run one locally
@@ -146,7 +157,7 @@ pnpm install
 pnpm bootstrap        # create wallet, mature its coinbases, fund the demo mnemonic
 pnpm spike            # prove vault + deposit against live regtest
 pnpm spike:collateral # prove bitcoind-verified collateral tracking
-pnpm demo             # the whole story — see below
+pnpm demo:regtest     # the whole story in ~1 minute — see below
 ```
 
 ### The whole story, one run
@@ -175,14 +186,17 @@ once the engine is killed, which is the correct behavior for that step, not a bu
 | `npx tsx scripts/03-spike-refund-cosign.ts` | Registers a vault, cosigns a quorum-backed refund, mines it |
 | `npx tsx scripts/04-spike-musig-vault.ts` | MuSig2 owner key, pre-signed exit tx, cosigned refund — Track B end to end |
 | `npx tsx scripts/06-spike-http-musig.ts` | Same, but the MuSig2 exchange runs over real HTTP (`scripts/borrower.ts`) |
-| `pnpm demo` | The whole story in one run, with the live dashboard — see above |
+| `pnpm demo` | The whole story in one run, with the live dashboard, on `TACHI_NETWORK` |
+| `pnpm demo:signet` / `pnpm demo:regtest` | Same, forcing the network |
+| `pnpm signet:wallet` | Create and check the private signet demo wallet |
 | `pnpm demo:liquidate` | Just the liquidation beat, standalone |
 | `pnpm demo:exit` | Just the exit beat — **engine and borrower responder both stopped**, standalone |
 | `pnpm verify:reserves` | Recomputes proof-of-reserves from public RPC only |
 
-Flip to signet with `TACHI_NETWORK=signet`. Signet gives judges independently
-verifiable reserves; regtest gives you mineable blocks for the liquidation and exit
-demos. **Demo on regtest, prove on signet.**
+`demo`, `demo:liquidate` and `demo:exit` follow `TACHI_NETWORK` (signet by
+default). Signet gives judges independently verifiable reserves and txids;
+regtest gives one-minute runs with mineable blocks. The numbered spikes stay
+on regtest — see [`docs/SIGNET.md`](docs/SIGNET.md).
 
 ---
 

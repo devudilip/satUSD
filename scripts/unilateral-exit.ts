@@ -29,6 +29,14 @@ import {
   aggregateKey,
   DevPriceFeed,
   type MusigExchange,
+  demoMnemonic,
+  demoCsvBlocks,
+  waitForConfirmation,
+  waitForHeight,
+  csvMatureTip,
+  probeAcceptance,
+  getTipHeight,
+  explorerTxUrl,
 } from "@satusd/tachi-kit";
 
 // Same in-process MuSig2 shortcut as scripts/05 and demo-liquidate.ts — the
@@ -59,7 +67,6 @@ function createLocalCounterpartyExchange(
   };
 }
 
-const CSV_BLOCKS = 144; // demo term — production tiers 1008/4320, see COLLATERAL-MODEL.md §3
 const DEPOSIT = 300_000n;
 const LLTV_BPS = 13_000n;
 const PENALTY_BPS = 800n;
@@ -67,14 +74,15 @@ const HEALTHY_PRICE = 100_000_000n; // $1,000,000/BTC
 const ENGINE_PORT = 4103;
 
 async function main() {
-  const config = resolveNetworkConfig("regtest");
+  const config = resolveNetworkConfig();
+  const CSV_BLOCKS = demoCsvBlocks(config); // 144 on regtest, 3 on signet — see tachi-kit chain.ts
   const tachi = createTachiClient(config);
   await assertTachiReachable(tachi, config);
   console.log("[exit] quorum:", await checkQuorum(tachi));
 
-  const mnemonic = process.env.DEMO_MNEMONIC!;
+  const mnemonic = demoMnemonic(config);
   const rpc = createBitcoinRpcClient(config);
-  const aggregator = WalletAggregator.fromMnemonic(mnemonic, { network: "regtest", rpc });
+  const aggregator = WalletAggregator.fromMnemonic(mnemonic, { network: config.network, rpc });
   const funderWallet = aggregator.addAccount({ addressType: "p2wpkh" });
   await funderWallet.sync();
   const protocolTreasury = aggregator.addAccount({ addressType: "p2wpkh", account: 1 });
@@ -130,18 +138,28 @@ async function main() {
   await app.close();
   console.log("[exit] --- ENGINE KILLED --- borrower proceeds alone with the bytes they already hold ---");
 
-  const tooEarly = await rpc.call<{ allowed: boolean; "reject-reason"?: string }[]>("testmempoolaccept", [[exitTxHex]]);
-  console.log("[exit] exit_tx before the term matures:", tooEarly[0].allowed, tooEarly[0]["reject-reason"] ?? "");
-  if (tooEarly[0].allowed) throw new Error("exit_tx should not be valid yet");
+  // Wait for the deposit to confirm first: CSV counts from that block, and
+  // scantxoutset (the balance check) only sees confirmed outputs.
+  await waitForConfirmation(config, rpc, cdp.channel.funding.txid, protocolTreasury.receiveAddress);
+  const matureTip = (await csvMatureTip(rpc, cdp.channel.funding.txid, CSV_BLOCKS))!;
+  if ((await getTipHeight(rpc)) < matureTip) {
+    // On signet this really broadcasts (the proxy has no testmempoolaccept) —
+    // safe only because the CSV delay can't have matured yet.
+    const tooEarly = await probeAcceptance(config, rpc, exitTxHex);
+    console.log("[exit] exit_tx before the term matures:", tooEarly.allowed, tooEarly.reason);
+    if (tooEarly.allowed) throw new Error("exit_tx should not be valid yet");
+  }
 
-  await rpc.call("generatetoaddress", [CSV_BLOCKS, funderWallet.receiveAddress]);
+  await waitForHeight(config, rpc, matureTip, protocolTreasury.receiveAddress);
 
-  const balanceBefore = await rpc.call<number>("getbalance");
+  await funderWallet.sync();
+  const balanceBefore = funderWallet.balance.confirmed;
   const txid = await rpc.call<string>("sendrawtransaction", [exitTxHex]);
-  await rpc.call("generatetoaddress", [1, funderWallet.receiveAddress]);
-  const balanceAfter = await rpc.call<number>("getbalance");
-  console.log("[exit] BORROWER BROADCAST ALONE, no engine, no protocol cooperation, txid:", txid);
-  console.log("[exit] borrower's own wallet balance", balanceBefore, "->", balanceAfter);
+  await waitForConfirmation(config, rpc, txid, protocolTreasury.receiveAddress);
+  await funderWallet.sync();
+  const balanceAfter = funderWallet.balance.confirmed;
+  console.log("[exit] BORROWER BROADCAST ALONE, no engine, no protocol cooperation:", explorerTxUrl(config, txid) ?? txid);
+  console.log("[exit] borrower's own wallet balance (sats)", balanceBefore, "->", balanceAfter);
 
   console.log("[exit] PASS — engine killed, borrower recovered every sat alone via the pre-signed exit_tx");
 }
