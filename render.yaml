@@ -1,0 +1,8 @@
+# One-click Render deploy: https://render.com/deploy?repo=https://github.com/devudilip/satUSD
+services:
+  - type: web
+    name: satusd-vault-app
+    runtime: docker
+    dockerfilePath: ./Dockerfile.hosted
+    plan: free
+    healthCheckPath: /api/state

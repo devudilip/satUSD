@@ -217,6 +217,17 @@ on regtest — see [`docs/SIGNET.md`](docs/SIGNET.md).
 
 ---
 
+## Hosting the vault app
+
+`Dockerfile.hosted` builds one container with a private regtest `bitcoind` plus `pnpm app`, so any Docker host can run it. It uses about 230 MB of RAM.
+
+- **Render (free tier):** go to [render.com/deploy?repo=https://github.com/devudilip/satUSD](https://render.com/deploy?repo=https://github.com/devudilip/satUSD). Render reads `render.yaml`.
+- **Railway / Fly / a VM:** point the service at `Dockerfile.hosted`. The app listens on `$PORT`, or 4120 if that isn't set.
+
+Every start begins with a fresh regtest chain, so vaults reset on restart. Render's free tier also sleeps after 15 minutes with no traffic. Open the URL a minute before you demo.
+
+Vercel can't host this. It runs short-lived serverless functions, and the app needs a node, a keeper loop and in-memory state that stay running.
+
 ## Demo
 
 **[▶ Watch the 2-minute demo](https://github.com/devudilip/satUSD/blob/main/demo/satusd-demo.mp4)** · **[▶ 39-second pitch](https://github.com/devudilip/satUSD/blob/main/demo/satusd-pitch-39s.mp4)** · [screenshots](demo/README.md)
