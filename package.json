@@ -14,6 +14,8 @@
     "demo": "tsx scripts/full-demo.ts",
     "demo:signet": "TACHI_NETWORK=signet tsx scripts/full-demo.ts",
     "demo:regtest": "TACHI_NETWORK=regtest tsx scripts/full-demo.ts",
+    "demo:step": "TACHI_NETWORK=regtest DEMO_STEP=1 tsx scripts/full-demo.ts",
+    "app": "TACHI_NETWORK=regtest tsx scripts/app.ts",
     "demo:liquidate": "tsx scripts/demo-liquidate.ts",
     "demo:exit": "tsx scripts/unilateral-exit.ts",
     "verify:reserves": "tsx scripts/verify-reserves.ts",

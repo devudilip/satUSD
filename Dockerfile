@@ -18,6 +18,6 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 
 ENV TACHI_NETWORK=regtest
-EXPOSE 4110
+EXPOSE 4110 4120
 
 CMD ["sh", "-c", "pnpm bootstrap && pnpm demo"]

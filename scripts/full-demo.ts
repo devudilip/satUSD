@@ -45,12 +45,26 @@ const HEALTHY_PRICE = 100_000_000n; // $1,000,000/BTC
 const CRASH_PRICE = 40_000_000n; // $400,000/BTC — under the ~$433,333 liquidation price
 const ENGINE_PORT = 4110;
 
-function section(title: string) {
+// `pnpm demo:step` pauses before each section so a presenter can explain it.
+const STEP_MODE = process.env.DEMO_STEP === "1";
+let stdinLines: AsyncIterableIterator<string> | null = null;
+async function pause(next: string) {
+  if (!STEP_MODE) return;
+  if (!stdinLines) {
+    const { createInterface } = await import("node:readline");
+    stdinLines = createInterface({ input: process.stdin })[Symbol.asyncIterator]();
+  }
+  process.stdout.write(`\n  ⏸  press Enter for: ${next} `);
+  await stdinLines.next();
+}
+
+async function section(title: string) {
+  await pause(title);
   console.log(`\n=== ${title} ===`);
 }
 
 async function main() {
-  section("0. Connect");
+  await section("0. Connect");
   const config = resolveNetworkConfig();
   // Demo term — production tiers 1008/4320 (COLLATERAL-MODEL.md §3). 144 on regtest, 3 on signet.
   const CSV_BLOCKS = demoCsvBlocks(config);
@@ -89,7 +103,7 @@ async function main() {
   const engineUrl = `http://127.0.0.1:${ENGINE_PORT}`;
   console.log("engine listening:", engineUrl);
 
-  section("1. Open a CDP — the borrower's exit_tx before anything else");
+  await section("1. Open a CDP — the borrower's exit_tx before anything else");
   const signerA = createDemoOwnerSigner();
   const cdpA = await cdpEngine.open({
     ownerSigner: signerA.ownerSigner,
@@ -106,12 +120,12 @@ async function main() {
   console.log("borrower now holds a fully agg-signed exit_tx. Zero satUSD exists yet.");
   cdpEngine.confirmExitTxDelivered(cdpA.id);
 
-  section("2. Mint");
+  await section("2. Mint");
   const { issuedUsdCents, state } = await cdpEngine.mint(cdpA.id, 100_000n, HEALTHY_PRICE);
   console.log(`minted, issued $${Number(issuedUsdCents) / 100} satUSD`);
   console.log(`committed state n=${state.n}: share ${state.shareSats} sats at priceLiq $${Number(state.priceLiqUsdCents) / 100}/BTC`);
 
-  section("3. Proof of reserves — nothing here requires trusting the engine");
+  await section("3. Proof of reserves — nothing here requires trusting the engine");
   // scantxoutset only sees confirmed UTXOs, not mempool — mine the deposit in
   // first, or this legitimately (if confusingly) reads back 0.
   await waitForConfirmation(config, rpc, cdpA.channel.funding.txid, funderWallet.receiveAddress);
@@ -132,7 +146,7 @@ async function main() {
   );
   console.log("^ that txid is announced now. It either matches the real liquidation later, or something is wrong.");
 
-  section("4. A second CDP — this one for the exit demo");
+  await section("4. A second CDP — this one for the exit demo");
   // Refresh the UTXO set: CDP-A's deposit spent from it, and its change is
   // only visible to scantxoutset once confirmed (step 3 waited for that).
   await funderWallet.sync();
@@ -153,7 +167,7 @@ async function main() {
   console.log("vault:", cdpB.channel.vault.p2tr.address, "deposit:", link(cdpB.channel.funding.txid));
 
 
-  section("5. Crash the price — watch a public-API-only keeper actually liquidate");
+  await section("5. Crash the price — watch a public-API-only keeper actually liquidate");
   const keeperAbort = new AbortController();
   let liquidatedTxid: string | null = null;
   const keeperTask = runKeeper({
@@ -186,7 +200,7 @@ async function main() {
   console.log(`confirmed on-chain in block ${liqHeight}`);
   console.log(`ledger has ${ledger.length} records, chain verifies: ${ledger.verify()}`);
 
-  section("6. Kill the engine. No cooperation is possible from here.");
+  await section("6. Kill the engine. No cooperation is possible from here.");
   await app.close();
   console.log("--- ENGINE PROCESS GONE ---");
 
@@ -206,12 +220,12 @@ async function main() {
   const exitHeight = await waitForConfirmation(config, rpc, exitTxid, funderWallet.receiveAddress);
   console.log(`exit confirmed in block ${exitHeight}`);
 
-  section("PASS");
+  await section("PASS");
   console.log(`Every number above is a real ${config.network} artifact. Nothing was mocked.`);
   console.log({ liquidationTxid: liquidatedTxid, exitTxid });
 }
 
-main().catch((err) => {
+main().then(() => process.exit(0)).catch((err) => {
   console.error("[full-demo] failed:", err);
   process.exit(1);
 });

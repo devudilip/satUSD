@@ -33,3 +33,22 @@ services:
       DEMO_MNEMONIC: "test test test test test test test test test test test junk"
     ports:
       - "4110:4110"
+
+  # The Maker-style vault app (`pnpm app`). Start just this with:
+  #   docker compose up --build bitcoind vault-app
+  # then open http://localhost:4120/app.html
+  vault-app:
+    build: .
+    depends_on:
+      bitcoind:
+        condition: service_healthy
+    environment:
+      TACHI_NETWORK: regtest
+      BITCOIN_RPC_URL: http://bitcoind:18443
+      BITCOIN_RPC_USER: tachi
+      BITCOIN_RPC_PASSWORD: tachi
+      DEMO_MNEMONIC: "test test test test test test test test test test test junk"
+      APP_HOST: 0.0.0.0
+    command: ["sh", "-c", "pnpm bootstrap && pnpm app"]
+    ports:
+      - "4120:4120"

@@ -7,18 +7,20 @@
  *   2. prints the funding address and its current balance.
  *
  * Fund the address from https://faucet.tachibtc.com (or any signet faucet).
- * The full demo spends 2 × 300,000 sats plus fees — ask for at least 0.01 sBTC.
+ * The full demo spends 2 × 300,000 sats plus fees — ask for at least 0.01 sBTC,
+ * or set DEMO_DEPOSIT_SATS=200000 to run on 0.0041.
  */
 import "dotenv/config";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { WalletAggregator, generateMnemonic } from "@tachibtc/taurus-wallet-aggregator";
-import { resolveNetworkConfig, createBitcoinRpcClient, explorerAddressUrl } from "@satusd/tachi-kit";
+import { resolveNetworkConfig, createBitcoinRpcClient, explorerAddressUrl, demoDepositSats } from "@satusd/tachi-kit";
 
 const ENV_PATH = new URL("../.env", import.meta.url);
-const NEEDED_SATS = 700_000n;
 
 async function main() {
   const config = resolveNetworkConfig("signet");
+  // Two vaults plus L1 fees. Short on coins? Set DEMO_DEPOSIT_SATS=200000 (needs 410,000).
+  const NEEDED_SATS = 2n * demoDepositSats(config, 300_000n) + 10_000n;
   let mnemonic = process.env.DEMO_MNEMONIC_SIGNET;
   if (!mnemonic) {
     mnemonic = generateMnemonic(128);

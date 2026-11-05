@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>satUSD Vaults</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f4f6f8; --surface: #ffffff; --surface-2: #f8fafb; --border: #e3e8ec;
+  --text: #1b2733; --muted: #6b7b8a; --faint: #9aa8b4;
+  --accent: #1aab9b; --accent-ink: #0e7c70; --accent-soft: #e3f6f3;
+  --btc: #f7931a; --btc-soft: #fff3e3;
+  --danger: #e2504b; --danger-soft: #fdecec; --warn: #e8a317; --warn-soft: #fdf5e2;
+  --ok: #1aab9b; --shadow: 0 1px 2px rgba(16,24,32,.04), 0 4px 16px rgba(16,24,32,.05);
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1419; --surface: #171e25; --surface-2: #1c242c; --border: #27313b;
+  --text: #e6edf3; --muted: #93a2b0; --faint: #66737f;
+  --accent: #2cc4b2; --accent-ink: #5fe0d0; --accent-soft: #123430;
+  --btc-soft: #33260f; --danger-soft: #3a1b1b; --warn-soft: #362a10; --shadow: none;
+} }
+:root[data-theme="dark"] {
+  --bg: #0f1419; --surface: #171e25; --surface-2: #1c242c; --border: #27313b;
+  --text: #e6edf3; --muted: #93a2b0; --faint: #66737f;
+  --accent: #2cc4b2; --accent-ink: #5fe0d0; --accent-soft: #123430;
+  --btc-soft: #33260f; --danger-soft: #3a1b1b; --warn-soft: #362a10; --shadow: none;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+a { color: var(--accent-ink); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 12.5px; }
+.muted { color: var(--muted); } .faint { color: var(--faint); }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+
+/* top bar */
+header { background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 5; }
+.bar { display: flex; align-items: center; gap: 24px; height: 64px; }
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; color: var(--text); }
+.logo-mark { width: 30px; height: 30px; border-radius: 50%; background: conic-gradient(var(--accent) 0 70%, var(--btc) 70% 100%); display: grid; place-items: center; }
+.logo-mark::after { content: ""; width: 14px; height: 14px; border-radius: 50%; background: var(--surface); }
+nav { display: flex; gap: 4px; }
+nav a { white-space: nowrap; padding: 8px 14px; border-radius: 8px; color: var(--muted); font-weight: 500; }
+nav a.active, nav a:hover { color: var(--text); background: var(--surface-2); text-decoration: none; }
+.bar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; font-size: 13px; background: var(--surface); white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+.dot.off { background: var(--danger); }
+
+main { padding: 28px 0 60px; }
+h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -.01em; }
+h2 { font-size: 17px; margin: 0 0 14px; }
+h3 { font-size: 14px; margin: 0 0 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.sub { color: var(--muted); margin: 0 0 24px; }
+
+.grid { display: grid; gap: 16px; }
+.g4 { grid-template-columns: repeat(4, 1fr); }
+.g2 { grid-template-columns: 1fr 1fr; }
+.g-main { grid-template-columns: 1.35fr 1fr; align-items: start; }
+@media (max-width: 900px) { .g4 { grid-template-columns: 1fr 1fr; } .g2, .g-main { grid-template-columns: 1fr; } nav { display: none; } }
+@media (max-width: 520px) { .g4 { grid-template-columns: 1fr; } .bar-right .chip.hide-sm { display: none; } }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; box-shadow: var(--shadow); min-width: 0; }
+.stat .label { color: var(--muted); font-size: 13px; margin-bottom: 6px; display: flex; justify-content: space-between; gap: 8px; }
+.stat .value { font-size: 26px; font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+.stat .foot { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+.big-ok { color: var(--accent-ink); } .big-warn { color: var(--warn); } .big-bad { color: var(--danger); }
+
+table { width: 100%; border-collapse: collapse; }
+th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12.5px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+td { padding: 14px 12px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+tr:last-child td { border-bottom: 0; }
+.table-wrap { overflow-x: auto; }
+
+.pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.pill.open { background: var(--accent-soft); color: var(--accent-ink); }
+.pill.liquidated { background: var(--danger-soft); color: var(--danger); }
+.pill.closed, .pill.exited { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+.pill.btc { background: var(--btc-soft); color: var(--btc); }
+
+.btn { appearance: none; border: 0; border-radius: 10px; padding: 11px 18px; font: 600 14px Inter, sans-serif; cursor: pointer; background: var(--accent); color: #fff; }
+.btn:hover { filter: brightness(1.05); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+.btn.danger { background: var(--danger); }
+.btn.small { padding: 7px 12px; font-size: 13px; border-radius: 8px; }
+.btn.block { width: 100%; }
+
+.field { margin-bottom: 18px; }
+.field label { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.input { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); padding: 0 14px; }
+.input:focus-within { border-color: var(--accent); }
+.input input { flex: 1; border: 0; background: transparent; color: var(--text); font: 500 20px Inter, sans-serif; padding: 12px 0; outline: none; min-width: 0; }
+.input .unit { color: var(--muted); font-weight: 600; }
+.max { color: var(--accent-ink); cursor: pointer; font-weight: 600; }
+
+.tabs { display: flex; gap: 4px; background: var(--surface-2); padding: 4px; border-radius: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+.tabs button { flex: 1; border: 0; background: transparent; padding: 8px 10px; border-radius: 8px; font: 600 13px Inter, sans-serif; color: var(--muted); cursor: pointer; }
+.tabs button.on { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; }
+.kv .k { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.kv .v { min-width: 0; overflow-wrap: anywhere; }
+.preview .row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px dashed var(--border); gap: 12px; }
+.preview .row:last-child { border-bottom: 0; }
+
+.bar-track { position: relative; height: 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); margin: 12px 0 4px; }
+.bar-fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; }
+.bar-mark { position: absolute; top: -4px; width: 2px; height: 14px; background: var(--text); opacity: .35; }
+.bar-legend { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--faint); }
+
+.feed { list-style: none; margin: 0; padding: 0; }
+.feed li { display: grid; grid-template-columns: 26px 1fr auto; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--border); align-items: start; }
+.feed li:last-child { border-bottom: 0; }
+.ico { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; font-size: 13px; background: var(--surface-2); }
+.ico.deposit, .ico.open { background: var(--btc-soft); color: var(--btc); }
+.ico.generate, .ico.payback, .ico.exit_signed { background: var(--accent-soft); color: var(--accent-ink); }
+.ico.liquidate { background: var(--danger-soft); color: var(--danger); }
+.ico.exit, .ico.close { background: var(--accent-soft); color: var(--accent-ink); }
+.feed .t { font-weight: 600; } .feed .d { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.feed .time { color: var(--faint); font-size: 12px; white-space: nowrap; }
+
+.price-ctl { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.price-ctl input { width: 130px; border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; background: var(--surface-2); color: var(--text); font: 500 13px Inter; }
+
+.guarantee { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.guarantee:last-child { border-bottom: 0; }
+.check { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-ink); display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+
+.toast { position: fixed; right: 20px; bottom: 20px; max-width: 420px; padding: 14px 16px; border-radius: 12px; background: var(--text); color: var(--bg); box-shadow: 0 8px 30px rgba(0,0,0,.2); font-size: 13.5px; z-index: 20; display: none; }
+.toast.err { background: var(--danger); color: #fff; }
+.busy { position: fixed; inset: 0; background: rgba(15,20,25,.35); display: none; place-items: center; z-index: 15; }
+.busy .card { display: flex; gap: 14px; align-items: center; max-width: 440px; }
+.spin { width: 22px; height: 22px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: s .8s linear infinite; flex: none; }
+@keyframes s { to { transform: rotate(360deg); } }
+
+.io { display: grid; grid-template-columns: 1fr 32px 1fr; gap: 12px; align-items: start; }
+@media (max-width: 900px) { .io { grid-template-columns: 1fr; } .io .arrow { transform: rotate(90deg); justify-self: center; } }
+.io .arrow { align-self: center; text-align: center; color: var(--faint); font-size: 20px; }
+.utxo { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: var(--surface-2); }
+.utxo .amt { font-weight: 600; font-variant-numeric: tabular-nums; }
+.utxo .lab { font-size: 12.5px; color: var(--accent-ink); font-weight: 600; }
+.sigs { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
+.sig { padding: 2px 8px; border-radius: 6px; font-size: 11.5px; font-weight: 600; background: var(--accent-soft); color: var(--accent-ink); }
+.sig.empty { background: transparent; border: 1px dashed var(--border); color: var(--faint); }
+.sig.owner { background: var(--btc-soft); color: var(--btc); }
+details summary { cursor: pointer; color: var(--muted); }
+pre.hex { white-space: pre-wrap; word-break: break-all; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; max-height: 200px; overflow: auto; }
+.search { display: flex; gap: 8px; }
+.search input { flex: 1; border: 1px solid var(--border); border-radius: 10px; padding: 11px 14px; background: var(--surface); color: var(--text); font: 13px "JetBrains Mono", monospace; min-width: 0; }
+.empty { text-align: center; padding: 36px 10px; color: var(--muted); }
+.note { font-size: 12.5px; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap bar">
+    <a href="#/" class="logo"><span class="logo-mark"></span>satUSD</a>
+    <nav>
+      <a href="#/" data-nav="home">Vaults</a>
+      <a href="#/open" data-nav="open">Open vault</a>
+      <a href="#/explorer" data-nav="explorer">Explorer</a>
+    </nav>
+    <div class="bar-right">
+      <span class="chip hide-sm" id="net-chip"><span class="dot"></span><span>connecting…</span></span>
+      <span class="chip" id="wallet-chip">—</span>
+    </div>
+  </div>
+</header>
+<main class="wrap" id="view"></main>
+<div class="busy" id="busy"><div class="card"><div class="spin"></div><div><b id="busy-title">Working…</b><div class="muted" id="busy-detail"></div></div></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const usd = (cents, d = 2) => cents == null ? "—" : "$" + (Number(cents) / 100).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+const btc = (sats) => (Number(sats) / 1e8).toLocaleString("en-US", { maximumFractionDigits: 8 });
+const pct = (bps) => bps == null ? "∞" : (Number(bps) / 100).toFixed(2) + "%";
+const short = (h, n = 10) => h ? `${h.slice(0, n)}…${h.slice(-6)}` : "—";
+const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : `${Math.floor(s / 3600)}h ago`; };
+const txLink = (txid, n = 10) => txid ? `<a class="mono" href="#/tx/${txid}">${short(txid, n)}</a>` : "—";
+
+let S = null; // latest /api/state
+let route = { name: "home" };
+let mounted = "";
+
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+function toast(msg, err = false) {
+  const t = $("#toast"); t.textContent = msg; t.className = "toast" + (err ? " err" : ""); t.style.display = "block";
+  clearTimeout(toast.h); toast.h = setTimeout(() => (t.style.display = "none"), err ? 7000 : 4000);
+}
+async function act(title, detail, fn) {
+  $("#busy-title").textContent = title; $("#busy-detail").textContent = detail; $("#busy").style.display = "grid";
+  try { const r = await fn(); await poll(); return r; }
+  catch (e) { toast(e.message, true); throw e; }
+  finally { $("#busy").style.display = "none"; }
+}
+
+function parseRoute() {
+  const h = location.hash.replace(/^#\/?/, "");
+  const [a, b] = h.split("/");
+  if (a === "open") return { name: "open" };
+  if (a === "vault" && b) return { name: "vault", id: decodeURIComponent(b) };
+  if (a === "tx" && b) return { name: "tx", txid: b };
+  if (a === "explorer") return { name: "explorer" };
+  return { name: "home" };
+}
+window.addEventListener("hashchange", () => { route = parseRoute(); mounted = ""; render(); window.scrollTo(0, 0); });
+
+async function poll() {
+  try { S = await api("/api/state"); render(); }
+  catch { $("#net-chip").innerHTML = `<span class="dot off"></span><span>engine offline</span>`; }
+}
+
+function header() {
+  if (!S) return;
+  $("#net-chip").innerHTML = `<span class="dot"></span><span>${esc(S.network)} · ${esc(S.chainId)} · block ${S.tipHeight}</span>`;
+  $("#wallet-chip").innerHTML = `<span class="pill btc">₿ ${btc(S.wallet.btcSats)}</span><span><b>${usd(S.wallet.satusdCents)}</b> satUSD</span>`;
+  document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === (route.name === "vault" ? "home" : route.name === "tx" ? "explorer" : route.name)));
+}
+
+function ratioClass(bps) { if (bps == null) return "big-ok"; const n = Number(bps); return n < Number(S.params.liquidationRatioBps) ? "big-bad" : n < 17000 ? "big-warn" : "big-ok"; }
+
+function render() {
+  header();
+  if (!S) { $("#view").innerHTML = `<div class="empty">Connecting to the satUSD engine…</div>`; return; }
+  const key = JSON.stringify(route);
+  if (route.name === "home") return renderHome();
+  if (route.name === "open") { if (mounted !== key) { mountOpen(); mounted = key; } return updateOpenPreview(); }
+  if (route.name === "vault") { if (mounted !== key) { mountVault(); mounted = key; } return updateVault(); }
+  if (route.name === "explorer") { if (mounted !== key) { mountExplorer(); mounted = key; } return; }
+  if (route.name === "tx") { if (mounted !== key) { mountTx(); mounted = key; } return; }
+}
+
+/* ---------------- home ---------------- */
+function priceCard() {
+  return `<div class="card stat">
+    <div class="label"><span>BTC price (oracle)</span><span class="pill btc">dev feed</span></div>
+    <div class="value">${usd(S.priceUsdCents, 0)}</div>
+    <div class="price-ctl">
+      <input id="price-in" type="number" step="1000" placeholder="set USD price">
+      <button class="btn small ghost" onclick="setPrice()">Set</button>
+      <button class="btn small ghost" onclick="movePrice(-0.3)">−30%</button>
+      <button class="btn small ghost" onclick="movePrice(0.3)">+30%</button>
+    </div>
+  </div>`;
+}
+function renderHome() {
+  const focused = document.activeElement && document.activeElement.id === "price-in";
+  if (focused) return; // don't clobber typing
+  const vaults = S.vaults;
+  $("#view").innerHTML = `
+    <h1>Bitcoin vaults</h1>
+    <p class="sub">Lock native BTC in a TAURUS vault on Bitcoin, generate satUSD against it. No bridge, no wrapped BTC, no custodian.</p>
+    <div class="grid g4" style="margin-bottom:16px">
+      ${priceCard()}
+      <div class="card stat"><div class="label">Total BTC locked</div><div class="value">₿ ${btc(S.totals.collateralSats)}</div><div class="foot">${usd(BigInt(S.totals.collateralSats) * BigInt(S.priceUsdCents) / 100000000n, 0)} · verified on Bitcoin</div></div>
+      <div class="card stat"><div class="label">Total satUSD debt</div><div class="value">${usd(S.totals.debtUsdCents, 0)}</div><div class="foot">Min ratio ${pct(S.params.minRatioBps)} · liquidation ${pct(S.params.liquidationRatioBps)}</div></div>
+      <div class="card stat"><div class="label">Tachi validators</div><div class="value">${S.quorum.liveValidators} / ${S.quorum.totalKnown}</div><div class="foot">${S.quorum.threshold} must cosign · keeper watching</div></div>
+    </div>
+    <div class="grid g-main">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h2 style="margin:0">Your vaults</h2><a class="btn small" href="#/open">+ Open vault</a></div>
+        ${vaults.length === 0 ? `<div class="empty">No vaults yet.<br><br><a class="btn" href="#/open">Open your first vault</a></div>` : `
+        <div class="table-wrap"><table>
+          <thead><tr><th>Vault</th><th>Collateral</th><th>Debt</th><th>Ratio</th><th>Liq. price</th><th>Status</th><th></th></tr></thead>
+          <tbody>${vaults.map((v) => `<tr>
+            <td><b>${esc(v.name)}</b><div class="faint mono">${short(v.vaultAddress, 12)}</div></td>
+            <td>₿ ${btc(v.collateralSats)}<div class="faint">${usd(v.collateralUsdCents, 0)}</div></td>
+            <td>${usd(v.debtUsdCents)}</td>
+            <td class="${v.status === "open" ? ratioClass(v.collateralRatioBps) : ""}"><b>${v.status === "open" ? pct(v.collateralRatioBps) : "—"}</b></td>
+            <td>${v.status === "open" ? usd(v.liquidationPriceUsdCents, 0) : "—"}</td>
+            <td><span class="pill ${v.status}">${v.status}</span></td>
+            <td><a class="btn small ghost" href="#/vault/${encodeURIComponent(v.id)}">Manage</a></td>
+          </tr>`).join("")}</tbody>
+        </table></div>`}
+      </div>
+      <div class="card"><h2>Activity</h2>${feed(S.activity.slice(0, 14))}</div>
+    </div>`;
+}
+const ICONS = { open: "₿", deposit: "↓", exit_signed: "✎", generate: "+", payback: "−", price: "$", liquidate: "!", close: "✓", exit: "⇥", block: "▦" };
+function feed(items) {
+  if (!items.length) return `<div class="empty">Nothing yet.</div>`;
+  return `<ul class="feed">${items.map((a) => `<li>
+    <span class="ico ${a.kind}">${ICONS[a.kind] || "•"}</span>
+    <div><div class="t">${esc(a.title)}</div>${a.detail ? `<div class="d">${esc(a.detail)}</div>` : ""}${a.txid ? `<div class="d">tx ${txLink(a.txid, 12)}</div>` : ""}</div>
+    <span class="time">${ago(a.at)}</span></li>`).join("")}</ul>`;
+}
+async function setPrice() {
+  const v = Number($("#price-in").value); if (!v) return;
+  await act("Updating oracle price", "", () => api("/api/price", { usdCents: String(Math.round(v * 100)) }));
+}
+async function movePrice(f) {
+  const next = Math.round(Number(S.priceUsdCents) * (1 + f));
+  await act("Updating oracle price", f < 0 ? "The keeper polls every 1.5s and liquidates anything under 130%." : "", () => api("/api/price", { usdCents: String(next) }));
+}
+
+/* ---------------- open vault ---------------- */
+function mountOpen() {
+  $("#view").innerHTML = `
+    <a href="#/" class="muted">← Vaults</a>
+    <h1 style="margin-top:10px">Open a BTC vault</h1>
+    <p class="sub">Your BTC goes into a Taproot vault on Bitcoin owned by a MuSig2 key you share with the protocol. You get a signed exit transaction before any satUSD is created.</p>
+    <div class="grid g-main">
+      <div class="card">
+        <div class="field">
+          <label><span>Deposit BTC</span><span>Wallet: ₿ <span id="o-wal"></span></span></label>
+          <div class="input"><input id="o-dep" type="number" min="0" step="0.01" value="1"><span class="unit">BTC</span></div>
+        </div>
+        <div class="field">
+          <label><span>Generate satUSD</span><span>Max: <span class="max" id="o-max" onclick="$('#o-gen').value=(Number(maxGenCents())/100).toFixed(2);updateOpenPreview()"></span></span></label>
+          <div class="input"><input id="o-gen" type="number" min="0" step="100" value="40000"><span class="unit">satUSD</span></div>
+        </div>
+        <button class="btn block" id="o-btn" onclick="openVault()">Open vault</button>
+        <p class="note" style="margin-top:16px">Opening runs for real: build the vault from the MuSig2 key and Tachi's 7 validator keys → fund it on Bitcoin → register it on Tachi's ledger → sign your exit tx → then sign the first liquidation state with Tachi's 5-of-7 cosign.</p>
+      </div>
+      <div class="card preview">
+        <h2>Vault preview</h2>
+        <div class="row"><span class="muted">Collateral value</span><b id="p-col"></b></div>
+        <div class="row"><span class="muted">Collateralization ratio</span><b id="p-cr"></b></div>
+        <div class="row"><span class="muted">Liquidation price</span><b id="p-liq"></b></div>
+        <div class="row"><span class="muted">Current BTC price</span><b id="p-px"></b></div>
+        <div class="row"><span class="muted">Minimum ratio / liquidation</span><b id="p-par"></b></div>
+        <div class="row"><span class="muted">Liquidation penalty</span><b id="p-pen"></b></div>
+        <div class="row"><span class="muted">Stability fee</span><b id="p-fee"></b></div>
+        <div class="row"><span class="muted">Loan term (exit timelock)</span><b id="p-term"></b></div>
+      </div>
+    </div>`;
+  ["#o-dep", "#o-gen"].forEach((s) => $(s).addEventListener("input", updateOpenPreview));
+}
+function depSats() { return BigInt(Math.round(Number($("#o-dep")?.value || 0) * 1e8)); }
+function genCents() { return BigInt(Math.round(Number($("#o-gen")?.value || 0) * 100)); }
+function maxGenCents() { return depSats() * BigInt(S.priceUsdCents) * 10000n / (100000000n * BigInt(S.params.minRatioBps)); }
+function updateOpenPreview() {
+  if (!$("#o-dep")) return;
+  const sats = depSats(), gen = genCents(), px = BigInt(S.priceUsdCents);
+  const col = sats * px / 100000000n;
+  const cr = gen > 0n ? col * 10000n / gen : null;
+  const liq = gen > 0n && sats > 0n ? gen * BigInt(S.params.liquidationRatioBps) * 100000000n / (10000n * sats) : null;
+  $("#o-wal").textContent = btc(S.wallet.btcSats);
+  $("#o-max").textContent = usd(maxGenCents(), 0);
+  $("#p-col").textContent = usd(col, 0);
+  const crEl = $("#p-cr"); crEl.textContent = pct(cr); crEl.className = ratioClass(cr);
+  $("#p-liq").textContent = usd(liq, 0);
+  $("#p-px").textContent = usd(px, 0);
+  $("#p-par").textContent = `${pct(S.params.minRatioBps)} / ${pct(S.params.liquidationRatioBps)}`;
+  $("#p-pen").textContent = pct(S.params.penaltyBps);
+  $("#p-fee").textContent = S.params.stabilityFee + " APR";
+  $("#p-term").textContent = `${S.params.termBlocks} blocks`;
+  const bad = sats < 10000n || (cr != null && cr < BigInt(S.params.minRatioBps));
+  $("#o-btn").disabled = bad;
+  $("#o-btn").textContent = bad && sats >= 10000n ? "Below 150% minimum ratio" : gen > 0n ? `Deposit ${btc(sats)} BTC & generate ${usd(gen, 0)}` : `Deposit ${btc(sats)} BTC`;
+}
+async function openVault() {
+  const r = await act("Opening your vault", "Funding the vault on Bitcoin, registering it on Tachi, signing your exit tx, then collecting Tachi's 5-of-7 cosign for the liquidation state…",
+    () => api("/api/vaults", { depositSats: String(depSats()), generateUsdCents: String(genCents()) }));
+  toast("Vault opened"); location.hash = `#/vault/${encodeURIComponent(r.id)}`;
+}
+
+/* ---------------- vault ---------------- */
+let vaultTab = "generate";
+let onchain = null;
+function V() { return S.vaults.find((v) => v.id === route.id); }
+function mountVault() {
+  onchain = null;
+  $("#view").innerHTML = `<a href="#/" class="muted">← Vaults</a><div id="v-body"></div>`;
+  loadOnchain();
+}
+async function loadOnchain() { try { onchain = await api(`/api/vaults/${encodeURIComponent(route.id)}/onchain`); updateVault(true); } catch {} }
+function updateVault(force) {
+  const v = V(); if (!v) { $("#v-body").innerHTML = `<div class="empty">Vault not found.</div>`; return; }
+  if (!force && document.activeElement && document.activeElement.closest && document.activeElement.closest("#manage")) { updateVaultStats(v); return; }
+  const lr = Number(S.params.liquidationRatioBps), mr = Number(S.params.minRatioBps);
+  $("#v-body").innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin:10px 0 4px;flex-wrap:wrap">
+      <h1 style="margin:0">BTC-A ${esc(v.name)}</h1><span class="pill ${v.status}">${v.status}</span>
+    </div>
+    <p class="sub mono">${esc(v.vaultAddress)}</p>
+    <div class="grid g4" style="margin-bottom:16px" id="v-stats"></div>
+    <div class="grid g-main">
+      <div class="card" id="manage">${manageHtml(v)}</div>
+      <div class="card">
+        <h2>Why your BTC is safe</h2>
+        <div class="guarantee"><span class="check">✓</span><div><b>Joint key, not a custodian</b><div class="muted">Owner key is a MuSig2 aggregate of you + the protocol. Neither can move the coins alone.</div><div class="mono faint">${short(v.ownerKey, 16)}</div></div></div>
+        <div class="guarantee"><span class="check">✓</span><div><b>You hold a signed exit transaction</b><div class="muted">After ${v.csvBlocks} blocks you can take everything back with no engine, no protocol and no validators.</div></div></div>
+        <div class="guarantee"><span class="check">${v.state ? "✓" : "–"}</span><div><b>Liquidation agreed in advance</b>
+          <div class="muted">${v.state ? `State n=${v.state.n}: lender gets ${btc(v.state.lenderShareSats)} BTC (debt + ${pct(S.params.penaltyBps)} at ${usd(v.state.priceLiqUsdCents, 0)}), the rest returns to you. Cosigned by Tachi's 5-of-7.` : "No debt yet, so no liquidation state."}</div>
+          ${v.state ? `<div class="faint">txid-to-be <span class="mono">${short(v.state.liquidationTxidToBe, 14)}</span></div>` : ""}</div></div>
+        <h3 style="margin-top:18px">Verify on-chain</h3>
+        <div class="kv">
+          <span class="k">Deposit tx</span><span class="v">${txLink(v.depositTxid, 14)}</span>
+          <span class="k">Balance via bitcoind</span><span class="v">${onchain ? (onchain.balanceSatsViaBitcoind == null ? "—" : `₿ ${btc(onchain.balanceSatsViaBitcoind)}`) : "…"}</span>
+          <span class="k">Tachi ledger</span><span class="v">${onchain ? tachiSummary(onchain.tachiRecords) + ` · <a href="${esc(onchain.tachiLink)}" target="_blank" rel="noopener">raw ↗</a>` : "…"}</span>
+          ${v.liquidationTxid ? `<span class="k">Liquidation tx</span><span class="v">${txLink(v.liquidationTxid, 14)}</span>` : ""}
+          ${v.closeTxid ? `<span class="k">Close tx</span><span class="v">${txLink(v.closeTxid, 14)}</span>` : ""}
+          ${v.exitTxid ? `<span class="k">Exit tx</span><span class="v">${txLink(v.exitTxid, 14)}</span>` : ""}
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:16px"><h2>Vault history</h2>${feed(S.activity.filter((a) => a.vaultId === v.id))}</div>`;
+  updateVaultStats(v);
+  bindManage(v);
+}
+function tachiSummary(recs) {
+  if (!recs || !recs.length) return `<span class="muted">no record</span>`;
+  const r = recs.find((x) => x.type === "vault_open") || recs[0];
+  return `<span class="pill open">${esc(r.type)} · ${esc(r.state)}</span>`;
+}
+function updateVaultStats(v) {
+  const lr = Number(S.params.liquidationRatioBps), mr = Number(S.params.minRatioBps);
+  const cr = v.collateralRatioBps == null ? null : Number(v.collateralRatioBps);
+  const scale = 30000; const w = cr == null ? 100 : Math.min(100, cr / scale * 100);
+  const color = cr == null || cr >= 17000 ? "var(--ok)" : cr >= lr ? "var(--warn)" : "var(--danger)";
+  const open = v.status === "open";
+  $("#v-stats").innerHTML = `
+    <div class="card stat"><div class="label">Liquidation price</div><div class="value ${open && v.debtUsdCents !== "0" ? ratioClass(v.collateralRatioBps) : ""}">${open ? usd(v.liquidationPriceUsdCents, 0) : "—"}</div><div class="foot">Current BTC ${usd(S.priceUsdCents, 0)} · <a href="#" onclick="event.preventDefault();movePrice(-0.3)">crash −30%</a></div></div>
+    <div class="card stat"><div class="label">Collateralization ratio</div><div class="value ${open ? ratioClass(v.collateralRatioBps) : ""}">${open ? pct(v.collateralRatioBps) : "—"}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${w}%;background:${color}"></div><div class="bar-mark" style="left:${lr / scale * 100}%"></div><div class="bar-mark" style="left:${mr / scale * 100}%"></div></div>
+      <div class="bar-legend"><span>liq ${pct(lr)}</span><span>min ${pct(mr)}</span><span>300%</span></div></div>
+    <div class="card stat"><div class="label">Collateral locked</div><div class="value">₿ ${btc(v.collateralSats)}</div><div class="foot">${usd(v.collateralUsdCents, 0)}</div></div>
+    <div class="card stat"><div class="label">Vault debt</div><div class="value">${usd(v.debtUsdCents)}</div><div class="foot">Available to generate ${open ? usd(v.maxGenerateUsdCents, 0) : "—"}</div></div>`;
+}
+function manageHtml(v) {
+  if (v.status !== "open") {
+    const msg = { liquidated: "The keeper broadcast the liquidation transaction signed when you generated. The lender received debt + penalty; the rest went to your delayed remainder output.", closed: "Debt repaid and the vault closed. Your BTC is back in your wallet.", exited: "You recovered your BTC alone with the pre-signed exit transaction." }[v.status] || "";
+    const tx = v.liquidationTxid || v.closeTxid || v.exitTxid;
+    return `<h2>Vault ${esc(v.status)}</h2><p class="muted">${msg}</p>${tx ? `<a class="btn" href="#/tx/${tx}">View transaction</a>` : ""}`;
+  }
+  const tabs = [["generate", "Generate"], ["payback", "Pay back"], ["close", "Close"], ["exit", "Exit alone"]];
+  let body = "";
+  if (vaultTab === "generate") body = `
+    <div class="field"><label><span>Generate satUSD</span><span>Max: <span class="max" data-max="${v.maxGenerateUsdCents}">${usd(v.maxGenerateUsdCents, 0)}</span></span></label>
+    <div class="input"><input id="m-amt" type="number" min="0" step="100" placeholder="0"><span class="unit">satUSD</span></div></div>
+    <button class="btn block" data-go="generate">Generate</button>
+    <p class="note" style="margin-top:14px">Every debt change signs a new liquidation state with you, the protocol and Tachi's 5-of-7 validators. The old state is discarded.</p>`;
+  if (vaultTab === "payback") body = `
+    <div class="field"><label><span>Pay back satUSD</span><span>Debt: <span class="max" data-max="${minBig(v.debtUsdCents, S.wallet.satusdCents)}">${usd(v.debtUsdCents)}</span></span></label>
+    <div class="input"><input id="m-amt" type="number" min="0" step="100" placeholder="0"><span class="unit">satUSD</span></div></div>
+    <button class="btn block" data-go="payback">Pay back</button>
+    <p class="note" style="margin-top:14px">Wallet holds ${usd(S.wallet.satusdCents)} satUSD.</p>`;
+  if (vaultTab === "close") body = v.debtUsdCents === "0"
+    ? `<p>Debt is zero. Closing broadcasts a cooperative transaction returning <b>₿ ${btc(v.collateralSats)}</b> (minus fee) to you.</p><button class="btn block" data-go="close">Close vault & withdraw BTC</button>`
+    : `<p class="muted">Pay back all ${usd(v.debtUsdCents)} of debt first, then close to withdraw your BTC cooperatively.</p><button class="btn block ghost" onclick="vaultTab='payback';updateVault(true)">Go to Pay back</button>`;
+  if (vaultTab === "exit") body = `
+    <p><b>The protocol disappeared?</b> Broadcast the exit transaction you were given at open. It needs no engine, no protocol signature and no Tachi validators.</p>
+    <p class="muted">Bitcoin only accepts it ${v.csvBlocks} blocks after your deposit confirmed. On regtest the app mines those blocks for you.</p>
+    <button class="btn block danger" data-go="exit">Broadcast my exit transaction</button>`;
+  return `<div class="tabs">${tabs.map(([k, l]) => `<button class="${vaultTab === k ? "on" : ""}" data-tab="${k}">${l}</button>`).join("")}</div>${body}`;
+}
+function minBig(a, b) { return BigInt(a) < BigInt(b) ? a : b; }
+function bindManage(v) {
+  const m = $("#manage"); if (!m) return;
+  m.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => { vaultTab = b.dataset.tab; updateVault(true); });
+  m.querySelectorAll("[data-max]").forEach((b) => b.onclick = () => { $("#m-amt").value = (Number(b.dataset.max) / 100).toFixed(2); });
+  m.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => manageGo(v, b.dataset.go));
+}
+async function manageGo(v, what) {
+  const id = encodeURIComponent(v.id);
+  const cents = () => { const n = Math.round(Number($("#m-amt")?.value || 0) * 100); if (!n) throw new Error("enter an amount"); return String(n); };
+  try {
+    if (what === "generate") await act("Generating satUSD", "Signing a new liquidation state and collecting Tachi's 5-of-7 cosign…", () => api(`/api/vaults/${id}/generate`, { usdCents: cents() }));
+    if (what === "payback") await act("Paying back", "Signing the updated liquidation state…", () => api(`/api/vaults/${id}/payback`, { usdCents: cents() }));
+    if (what === "close") { const r = await act("Closing vault", "Broadcasting the cooperative close transaction…", () => api(`/api/vaults/${id}/close`, {})); toast("Vault closed"); location.hash = `#/tx/${r.txid}`; return; }
+    if (what === "exit") { const r = await act("Exiting alone", `Waiting out the ${v.csvBlocks}-block term, then broadcasting your pre-signed exit tx…`, () => api(`/api/vaults/${id}/exit`, {})); toast("Exit confirmed"); location.hash = `#/tx/${r.txid}`; return; }
+    toast("Done"); updateVault(true);
+  } catch (e) { if (e.message === "enter an amount") toast(e.message, true); }
+}
+
+/* ---------------- explorer ---------------- */
+function mountExplorer() {
+  const txs = S.activity.filter((a) => a.txid);
+  $("#view").innerHTML = `
+    <h1>Explorer</h1>
+    <p class="sub">Transactions decoded straight from the Bitcoin node (${esc(S.network)}), with vault spending paths and Tachi ledger records.</p>
+    <div class="card" style="margin-bottom:16px"><div class="search"><input id="q" placeholder="Paste a txid"><button class="btn" onclick="const q=$('#q').value.trim();if(q)location.hash='#/tx/'+q">Look up</button></div></div>
+    <div class="card"><h2>Transactions from this app</h2>${txs.length ? `<div class="table-wrap"><table><thead><tr><th>Action</th><th>Vault</th><th>Txid</th><th>When</th></tr></thead><tbody>
+      ${txs.map((a) => `<tr><td><b>${esc(a.title)}</b></td><td>${esc((S.vaults.find((v) => v.id === a.vaultId) || {}).name || "")}</td><td>${txLink(a.txid, 14)}</td><td class="faint">${ago(a.at)}</td></tr>`).join("")}
+    </tbody></table></div>` : `<div class="empty">No transactions yet. Open a vault first.</div>`}</div>`;
+}
+const ROLE = {
+  deposit: ["Vault deposit", "Your BTC moving into a TAURUS vault. The vault is then registered on Tachi's ledger (shown below)."],
+  liquidation: ["Liquidation", "The liquidation state signed when you generated satUSD, now broadcast by the keeper. Spent through the vault's cooperative path."],
+  close: ["Cooperative close", "Debt repaid; the final state returns the BTC to the borrower."],
+  exit: ["Unilateral exit", "The borrower's pre-signed exit, spent through the vault's timelocked exit path. No validators, no protocol."],
+};
+async function mountTx() {
+  $("#view").innerHTML = `<a href="#/explorer" class="muted">← Explorer</a><div id="tx-body"><div class="empty">Loading transaction…</div></div>`;
+  let t;
+  try { t = await api(`/api/tx/${route.txid}`); } catch (e) { $("#tx-body").innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  const [rname, rdesc] = ROLE[t.role] || ["Transaction", ""];
+  $("#tx-body").innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin:10px 0 4px;flex-wrap:wrap"><h1 style="margin:0">${rname}</h1>
+      ${t.vault ? `<a class="pill btc" href="#/vault/${encodeURIComponent(t.vaultId)}">${esc(t.vault)}</a>` : ""}
+      <span class="pill ${t.confirmations > 0 ? "open" : "liquidated"}">${t.confirmations > 0 ? `${t.confirmations} confirmation${t.confirmations === 1 ? "" : "s"}` : "unconfirmed"}</span></div>
+    <p class="sub mono" style="overflow-wrap:anywhere">${esc(t.txid)}</p>
+    ${rdesc ? `<p class="note" style="margin-bottom:16px">${esc(rdesc)}</p>` : ""}
+    <div class="grid g4" style="margin-bottom:16px">
+      <div class="card stat"><div class="label">Block</div><div class="value">${t.blockHeight ?? "mempool"}</div></div>
+      <div class="card stat"><div class="label">Total out</div><div class="value">₿ ${btc(t.outputs.reduce((s, o) => s + o.valueSats, 0))}</div></div>
+      <div class="card stat"><div class="label">Fee</div><div class="value">${t.feeSats ?? "—"} <span class="muted" style="font-size:14px">sats</span></div></div>
+      <div class="card stat"><div class="label">Size</div><div class="value">${t.vsize} <span class="muted" style="font-size:14px">vB</span></div></div>
+    </div>
+    <div class="card">
+      <div class="io">
+        <div><h3>Inputs</h3>${t.inputs.map(inputHtml).join("")}</div>
+        <div class="arrow">→</div>
+        <div><h3>Outputs</h3>${t.outputs.map(outputHtml).join("")}</div>
+      </div>
+    </div>
+    ${t.tachiRecord ? tachiHtml(t.tachiRecord) : ""}
+    <div class="card" style="margin-top:16px"><details><summary>Raw transaction hex</summary><pre class="hex mono">${esc(t.hex)}</pre></details></div>`;
+}
+function inputHtml(i) {
+  if (i.coinbase) return `<div class="utxo">Coinbase (new coins)</div>`;
+  let path = "";
+  if (i.path && i.path.name === "Cooperative path") {
+    const slots = i.path.validatorSlots, n = i.path.validatorSignatures;
+    path = `<div style="margin-top:8px"><b>${i.path.name}</b> <span class="muted">· ${esc(i.path.meaning)}</span>
+      <div class="sigs"><span class="sig owner">owner ✓</span>${Array.from({ length: slots }, (_, k) => `<span class="sig ${k < n ? "" : "empty"}">${k < n ? "validator ✓" : "—"}</span>`).join("")}</div>
+      <div class="faint" style="margin-top:6px">${n} of ${slots} Tachi validator signatures · ${i.path.scriptBytes}-byte tapscript</div></div>`;
+  } else if (i.path) {
+    path = `<div style="margin-top:8px"><b>${i.path.name}</b> <span class="muted">· ${esc(i.path.meaning)}</span>
+      <div class="sigs"><span class="sig owner">owner ✓</span><span class="sig empty">no validators</span><span class="sig">timelock ${i.sequence} blocks</span></div></div>`;
+  }
+  return `<div class="utxo"><div style="display:flex;justify-content:space-between;gap:8px"><span class="lab">${esc(i.label || "")}</span><span class="amt">₿ ${btc(i.valueSats)}</span></div>
+    <div class="mono faint" style="overflow-wrap:anywhere">${esc(i.address || "")}</div>
+    <div class="faint">spends ${txLink(i.prevTxid, 10)}:${i.prevVout}</div>${path}</div>`;
+}
+function outputHtml(o) {
+  return `<div class="utxo"><div style="display:flex;justify-content:space-between;gap:8px"><span class="lab">${esc(o.label || "")}</span><span class="amt">₿ ${btc(o.valueSats)}</span></div>
+    <div class="mono faint" style="overflow-wrap:anywhere">#${o.n} · ${esc(o.address || o.type)}</div></div>`;
+}
+function tachiHtml(recs) {
+  if (!recs.length) return "";
+  return `<div class="card" style="margin-top:16px"><h2>On Tachi's ledger</h2>${recs.map((r) => `
+    <div class="kv" style="padding:10px 0;border-bottom:1px solid var(--border)">
+      <span class="k">Type</span><span class="v"><span class="pill open">${esc(r.type)}</span> <span class="pill closed">${esc(r.state)}</span></span>
+      <span class="k">Tachi tx</span><span class="v mono">${esc(r.hash)}</span>
+      <span class="k">Tachi height</span><span class="v">${esc(r.height)}</span>
+      ${r.bitcoinInput ? `<span class="k">Bitcoin deposit</span><span class="v">${txLink(r.bitcoinInput.txid, 14)}:${r.bitcoinInput.vout} · ₿ ${btc(r.bitcoinInput.valueSats)}</span>` : ""}
+      <span class="k">Ledger fee</span><span class="v">${esc(r.feeSats)} sats</span>
+    </div>`).join("")}</div>`;
+}
+
+route = parseRoute();
+poll();
+setInterval(poll, 2000);
+</script>
+</body>
+</html>

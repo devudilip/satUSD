@@ -135,6 +135,21 @@ liquidation, kill the engine, borrower exits alone. While it's running, open
 **http://localhost:4110** to watch the live dashboard update through each
 step. Verified from a completely fresh chain, no local state required.
 
+**The vault app (Maker-style UI + explorer):**
+
+```bash
+pnpm app              # regtest; needs the local bitcoind below
+# or: docker compose up --build bitcoind vault-app
+```
+
+Open **http://localhost:4120/app.html**. Open a vault (deposit BTC, generate
+satUSD), pay back, close, or exit alone; move the oracle price and watch the
+keeper liquidate. Every Bitcoin transaction links to a built-in explorer that
+decodes it from the node — which vault path was used, how many of Tachi's
+validators signed, who each output pays — plus the vault's records on
+Tachi's ledger. Generate and pay back are not Bitcoin transactions: they
+update the debt and re-sign the waiting liquidation transaction.
+
 **Signet (public chain, no local bitcoind — the default network):**
 
 ```bash
@@ -189,6 +204,8 @@ once the engine is killed, which is the correct behavior for that step, not a bu
 | `pnpm demo` | The whole story in one run, with the live dashboard, on `TACHI_NETWORK` |
 | `pnpm demo:signet` / `pnpm demo:regtest` | Same, forcing the network |
 | `pnpm signet:wallet` | Create and check the private signet demo wallet |
+| `pnpm app` | The vault app with explorer, on http://localhost:4120/app.html |
+| `pnpm demo:step` | The whole story, pausing before each step for a live walkthrough |
 | `pnpm demo:liquidate` | Just the liquidation beat, standalone |
 | `pnpm demo:exit` | Just the exit beat — **engine and borrower responder both stopped**, standalone |
 | `pnpm verify:reserves` | Recomputes proof-of-reserves from public RPC only |
