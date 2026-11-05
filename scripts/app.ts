@@ -444,6 +444,10 @@ async function main() {
   });
 
   app.get("/app", async (_req, reply) => reply.redirect("/app.html"));
+  // The root URL opens the vault app; the older engine dashboard stays at /index.html.
+  app.addHook("onRequest", async (req, reply) => {
+    if (req.url === "/") return reply.redirect("/app.html");
+  });
 
   await app.listen({ port: PORT, host: HOST });
 
