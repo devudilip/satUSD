@@ -217,6 +217,35 @@ on regtest — see [`docs/SIGNET.md`](docs/SIGNET.md).
 
 ---
 
+## satUSD on Tachi EVM
+
+satUSD is an **ERC-20 on Tachi's EVM**, Tachi's EVM on the same ledger as the TAURUS vaults (chain ID `0x54434849`, "TCHI"). The BTC never enters the EVM. It stays in a TAURUS vault on Bitcoin, and the contracts hold the debt side:
+
+| Contract | What it does |
+|---|---|
+| [`SatUSD`](contracts/SatUSD.sol) | The ERC-20. Only the VaultManager can mint or burn; anyone can `transfer` it. |
+| [`VaultManager`](contracts/VaultManager.sol) | One record per vault: owner, collateral sats, debt, Bitcoin txids. Enforces the rules on-chain: `generate` reverts below 150%, `liquidate` reverts at or above 130%, only the owner can `payBack`, and `close` needs zero debt. |
+
+How a vault maps across the layers:
+
+| Step | Bitcoin (TAURUS vault) | Tachi EVM (contracts) |
+|---|---|---|
+| Open | Deposit into the vault, signed exit tx handed over | `openVault`: operator records the confirmed deposit |
+| Generate | New liquidation state co-signed (you + protocol + 5/7 validators) | `generate`: ratio checked on-chain, satUSD minted to you |
+| Pay back | Liquidation state re-signed for the lower debt | `payBack`: you burn satUSD (signed by your key); `updateLiquidationTx` |
+| Price | (none) | `setPrice`: the dev oracle |
+| Liquidate | Keeper broadcasts the pre-signed liquidation tx | `liquidate`: re-checks < 130% on-chain, records the Bitcoin txid |
+| Close / Exit | Cooperative close / solo timelocked exit | `close` / `recordExit` with the Bitcoin txid |
+
+Gas is paid in sats from VTXOs. On regtest the app registers gas VTXOs for its own keys automatically. Every start of `pnpm app` deploys fresh contracts, so the on-chain state matches the app. Each EVM transaction links to [regtest.tachibtcscan.com](https://regtest.tachibtcscan.com).
+
+```bash
+pnpm contracts:build   # compile contracts/*.sol (solc, Cancun) → contracts/out/satusd.json
+pnpm evm:smoke         # deploy + full lifecycle against Tachi regtest EVM, no bitcoind needed
+```
+
+**What's trusted:** the operator (the engine) attests to the Bitcoin side, meaning which deposit confirmed and which txid liquidated, closed or exited a vault. It also runs the price oracle. Contracts on Tachi can't read Bitcoin state yet, so those facts come in as operator calls. The contract still enforces every ratio rule against its own on-chain price.
+
 ## Hosting the vault app
 
 `Dockerfile.hosted` builds one container with a private regtest `bitcoind` plus `pnpm app`, so any Docker host can run it. It uses about 230 MB of RAM.

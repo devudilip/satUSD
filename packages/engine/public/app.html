@@ -119,6 +119,8 @@ tr:last-child td { border-bottom: 0; }
 .ico.generate, .ico.payback, .ico.exit_signed { background: var(--accent-soft); color: var(--accent-ink); }
 .ico.liquidate { background: var(--danger-soft); color: var(--danger); }
 .ico.exit, .ico.close { background: var(--accent-soft); color: var(--accent-ink); }
+.ico.evm, .ico.transfer, .ico.price { background: var(--surface-2); color: var(--accent-ink); }
+.evm-tag { display: inline-block; padding: 1px 6px; border-radius: 5px; font-size: 10.5px; font-weight: 700; letter-spacing: .02em; background: var(--accent-soft); color: var(--accent-ink); margin-right: 4px; }
 .feed .t { font-weight: 600; } .feed .d { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
 .feed .time { color: var(--faint); font-size: 12px; white-space: nowrap; }
 
@@ -181,6 +183,8 @@ const btc = (sats) => (Number(sats) / 1e8).toLocaleString("en-US", { maximumFrac
 const pct = (bps) => bps == null ? "∞" : (Number(bps) / 100).toFixed(2) + "%";
 const short = (h, n = 10) => h ? `${h.slice(0, n)}…${h.slice(-6)}` : "—";
 const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : `${Math.floor(s / 3600)}h ago`; };
+const evmLink = (url, hash, n = 10) => url ? `<a class="mono" href="${esc(url)}" target="_blank" rel="noopener">${short(hash, n)} ↗</a>` : "—";
+const addrLink = (url, addr) => `<a class="mono" href="${esc(url)}" target="_blank" rel="noopener">${short(addr, 10)} ↗</a>`;
 const txLink = (txid, n = 10) => txid ? `<a class="mono" href="#/tx/${txid}">${short(txid, n)}</a>` : "—";
 
 let S = null; // latest /api/state
@@ -254,18 +258,19 @@ function priceCard() {
   </div>`;
 }
 function renderHome() {
-  const focused = document.activeElement && document.activeElement.id === "price-in";
+  const focused = document.activeElement && ["price-in", "t-to", "t-amt"].includes(document.activeElement.id);
   if (focused) return; // don't clobber typing
   const vaults = S.vaults;
   $("#view").innerHTML = `
     <h1>Bitcoin vaults</h1>
-    <p class="sub">Lock native BTC in a TAURUS vault on Bitcoin, generate satUSD against it. No bridge, no wrapped BTC, no custodian.</p>
+    <p class="sub">Lock native BTC in a TAURUS vault on Bitcoin, generate satUSD — an ERC-20 on Tachi EVM — against it. No bridge, no wrapped BTC, no custodian.</p>
     <div class="grid g4" style="margin-bottom:16px">
       ${priceCard()}
       <div class="card stat"><div class="label">Total BTC locked</div><div class="value">₿ ${btc(S.totals.collateralSats)}</div><div class="foot">${usd(BigInt(S.totals.collateralSats) * BigInt(S.priceUsdCents) / 100000000n, 0)} · verified on Bitcoin</div></div>
       <div class="card stat"><div class="label">Total satUSD debt</div><div class="value">${usd(S.totals.debtUsdCents, 0)}</div><div class="foot">Min ratio ${pct(S.params.minRatioBps)} · liquidation ${pct(S.params.liquidationRatioBps)}</div></div>
       <div class="card stat"><div class="label">Tachi validators</div><div class="value">${S.quorum.liveValidators} / ${S.quorum.totalKnown}</div><div class="foot">${S.quorum.threshold} must cosign · keeper watching</div></div>
     </div>
+    ${tokenCard()}
     <div class="grid g-main">
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><h2 style="margin:0">Your vaults</h2><a class="btn small" href="#/open">+ Open vault</a></div>
@@ -286,12 +291,45 @@ function renderHome() {
       <div class="card"><h2>Activity</h2>${feed(S.activity.slice(0, 14))}</div>
     </div>`;
 }
-const ICONS = { open: "₿", deposit: "↓", exit_signed: "✎", generate: "+", payback: "−", price: "$", liquidate: "!", close: "✓", exit: "⇥", block: "▦" };
+function tokenCard() {
+  const e = S.evm;
+  return `<div class="grid g-main" style="margin-bottom:16px">
+    <div class="card">
+      <h2>satUSD on Tachi EVM</h2>
+      <p class="muted" style="margin-top:0">satUSD is an ERC-20 on Tachi's EVM. The VaultManager contract holds every vault's debt and enforces the rules on-chain: mint only at ≥ ${pct(S.params.minRatioBps)}, liquidate only below ${pct(S.params.liquidationRatioBps)}. The BTC itself stays in TAURUS vaults on Bitcoin.</p>
+      <div class="kv">
+        <span class="k">SatUSD token</span><span class="v">${addrLink(e.tokenUrl, e.token)}</span>
+        <span class="k">VaultManager</span><span class="v">${addrLink(e.managerUrl, e.manager)}</span>
+        <span class="k">Total supply</span><span class="v">${usd(e.supplyCents)} satUSD</span>
+        <span class="k">Your EVM address</span><span class="v mono">${esc(e.user)}</span>
+        <span class="k">Your balance</span><span class="v"><b>${usd(S.wallet.satusdCents)}</b> satUSD</span>
+        <span class="k">Chain ID</span><span class="v mono">${esc(e.chainId)} ("TCHI")</span>
+      </div>
+      <p class="note" style="margin-top:14px">Gas is paid in sats from VTXOs on Tachi. Every transaction opens on <a href="${esc(e.explorer)}" target="_blank" rel="noopener">tachibtcscan ↗</a>.</p>
+    </div>
+    <div class="card">
+      <h2>Send satUSD</h2>
+      <div class="field"><label><span>To (EVM address)</span></label><div class="input"><input id="t-to" placeholder="0x…" value="${esc(sendTo)}" oninput="sendTo=this.value"></div></div>
+      <div class="field"><label><span>Amount</span><span>Balance: <span class="max" onclick="$('#t-amt').value=(Number(S.wallet.satusdCents)/100).toFixed(2);sendAmt=$('#t-amt').value">${usd(S.wallet.satusdCents)}</span></span></label>
+      <div class="input"><input id="t-amt" type="number" min="0" step="100" placeholder="0" value="${esc(sendAmt)}" oninput="sendAmt=this.value"><span class="unit">satUSD</span></div></div>
+      <button class="btn block" onclick="sendSatusd()">Send</button>
+      <p class="note" style="margin-top:14px">A standard ERC-20 transfer, signed by your key and confirmed by Tachi.</p>
+    </div>
+  </div>`;
+}
+let sendTo = "", sendAmt = "";
+async function sendSatusd() {
+  const n = Math.round(Number(sendAmt || 0) * 100);
+  if (!n) return toast("enter an amount", true);
+  const r = await act("Sending satUSD", "ERC-20 transfer on Tachi EVM…", () => api("/api/transfer", { to: sendTo.trim(), usdCents: String(n) }));
+  sendAmt = ""; toast("Sent"); window.open(r.url, "_blank", "noopener");
+}
+const ICONS = { evm: "◆", transfer: "→", open: "₿", deposit: "↓", exit_signed: "✎", generate: "+", payback: "−", price: "$", liquidate: "!", close: "✓", exit: "⇥", block: "▦" };
 function feed(items) {
   if (!items.length) return `<div class="empty">Nothing yet.</div>`;
   return `<ul class="feed">${items.map((a) => `<li>
     <span class="ico ${a.kind}">${ICONS[a.kind] || "•"}</span>
-    <div><div class="t">${esc(a.title)}</div>${a.detail ? `<div class="d">${esc(a.detail)}</div>` : ""}${a.txid ? `<div class="d">tx ${txLink(a.txid, 12)}</div>` : ""}</div>
+    <div><div class="t">${esc(a.title)}</div>${a.detail ? `<div class="d">${esc(a.detail)}</div>` : ""}${a.txid ? `<div class="d">Bitcoin tx ${txLink(a.txid, 12)}</div>` : ""}${a.evmTx ? `<div class="d"><span class="evm-tag">TACHI EVM</span>${evmLink(a.evmUrl, a.evmTx, 12)}</div>` : ""}</div>
     <span class="time">${ago(a.at)}</span></li>`).join("")}</ul>`;
 }
 async function setPrice() {
@@ -375,6 +413,7 @@ function mountVault() {
   loadOnchain();
 }
 async function loadOnchain() { try { onchain = await api(`/api/vaults/${encodeURIComponent(route.id)}/onchain`); updateVault(true); } catch {} }
+
 function updateVault(force) {
   const v = V(); if (!v) { $("#v-body").innerHTML = `<div class="empty">Vault not found.</div>`; return; }
   if (!force && document.activeElement && document.activeElement.closest && document.activeElement.closest("#manage")) { updateVaultStats(v); return; }
@@ -399,6 +438,7 @@ function updateVault(force) {
           <span class="k">Deposit tx</span><span class="v">${txLink(v.depositTxid, 14)}</span>
           <span class="k">Balance via bitcoind</span><span class="v">${onchain ? (onchain.balanceSatsViaBitcoind == null ? "—" : `₿ ${btc(onchain.balanceSatsViaBitcoind)}`) : "…"}</span>
           <span class="k">Tachi ledger</span><span class="v">${onchain ? tachiSummary(onchain.tachiRecords) + ` · <a href="${esc(onchain.tachiLink)}" target="_blank" rel="noopener">raw ↗</a>` : "…"}</span>
+          <span class="k">VaultManager</span><span class="v">${onchain && onchain.evmVault ? `<span class="pill ${esc(onchain.evmVault.status)}">${esc(onchain.evmVault.status)}</span> debt ${usd(onchain.evmVault.debtCents)} · <a href="${esc(onchain.managerUrl)}" target="_blank" rel="noopener">contract ↗</a>` : "…"}</span>
           ${v.liquidationTxid ? `<span class="k">Liquidation tx</span><span class="v">${txLink(v.liquidationTxid, 14)}</span>` : ""}
           ${v.closeTxid ? `<span class="k">Close tx</span><span class="v">${txLink(v.closeTxid, 14)}</span>` : ""}
           ${v.exitTxid ? `<span class="k">Exit tx</span><span class="v">${txLink(v.exitTxid, 14)}</span>` : ""}
@@ -470,20 +510,24 @@ async function manageGo(v, what) {
     if (what === "payback") await act("Paying back", "Signing the updated liquidation state…", () => api(`/api/vaults/${id}/payback`, { usdCents: cents() }));
     if (what === "close") { const r = await act("Closing vault", "Broadcasting the cooperative close transaction…", () => api(`/api/vaults/${id}/close`, {})); toast("Vault closed"); location.hash = `#/tx/${r.txid}`; return; }
     if (what === "exit") { const r = await act("Exiting alone", `Waiting out the ${v.csvBlocks}-block term, then broadcasting your pre-signed exit tx…`, () => api(`/api/vaults/${id}/exit`, {})); toast("Exit confirmed"); location.hash = `#/tx/${r.txid}`; return; }
-    toast("Done"); updateVault(true);
+    toast("Done"); updateVault(true); loadOnchain();
   } catch (e) { if (e.message === "enter an amount") toast(e.message, true); }
 }
 
 /* ---------------- explorer ---------------- */
 function mountExplorer() {
   const txs = S.activity.filter((a) => a.txid);
+  const evmTxs = S.activity.filter((a) => a.evmTx);
   $("#view").innerHTML = `
     <h1>Explorer</h1>
     <p class="sub">Transactions decoded straight from the Bitcoin node (${esc(S.network)}), with vault spending paths and Tachi ledger records.</p>
     <div class="card" style="margin-bottom:16px"><div class="search"><input id="q" placeholder="Paste a txid"><button class="btn" onclick="const q=$('#q').value.trim();if(q)location.hash='#/tx/'+q">Look up</button></div></div>
     <div class="card"><h2>Transactions from this app</h2>${txs.length ? `<div class="table-wrap"><table><thead><tr><th>Action</th><th>Vault</th><th>Txid</th><th>When</th></tr></thead><tbody>
       ${txs.map((a) => `<tr><td><b>${esc(a.title)}</b></td><td>${esc((S.vaults.find((v) => v.id === a.vaultId) || {}).name || "")}</td><td>${txLink(a.txid, 14)}</td><td class="faint">${ago(a.at)}</td></tr>`).join("")}
-    </tbody></table></div>` : `<div class="empty">No transactions yet. Open a vault first.</div>`}</div>`;
+    </tbody></table></div>` : `<div class="empty">No transactions yet. Open a vault first.</div>`}</div>
+    <div class="card" style="margin-top:16px"><h2>Tachi EVM transactions</h2><p class="muted" style="margin-top:0">satUSD contract calls, opened on Tachi's explorer.</p>${evmTxs.length ? `<div class="table-wrap"><table><thead><tr><th>Action</th><th>Vault</th><th>EVM tx</th><th>When</th></tr></thead><tbody>
+      ${evmTxs.map((a) => `<tr><td><b>${esc(a.title)}</b></td><td>${esc((S.vaults.find((v) => v.id === a.vaultId) || {}).name || "")}</td><td>${evmLink(a.evmUrl, a.evmTx, 14)}</td><td class="faint">${ago(a.at)}</td></tr>`).join("")}
+    </tbody></table></div>` : `<div class="empty">None yet.</div>`}</div>`;
 }
 const ROLE = {
   deposit: ["Vault deposit", "Your BTC moving into a TAURUS vault. The vault is then registered on Tachi's ledger (shown below)."],

@@ -16,6 +16,8 @@
     "demo:regtest": "TACHI_NETWORK=regtest tsx scripts/full-demo.ts",
     "demo:step": "TACHI_NETWORK=regtest DEMO_STEP=1 tsx scripts/full-demo.ts",
     "app": "TACHI_NETWORK=regtest tsx scripts/app.ts",
+    "contracts:build": "tsx scripts/build-contracts.ts",
+    "evm:smoke": "tsx scripts/08-evm-smoke.ts",
     "demo:liquidate": "tsx scripts/demo-liquidate.ts",
     "demo:exit": "tsx scripts/unilateral-exit.ts",
     "verify:reserves": "tsx scripts/verify-reserves.ts",
@@ -24,16 +26,19 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@noble/curves": "1.9.7",
     "@satusd/engine": "workspace:*",
     "@satusd/tachi-kit": "workspace:*",
     "@scure/btc-signer": "2.4.1",
-    "@tachibtc/tachi-sdk-ts": "0.2.1",
+    "@tachibtc/tachi-sdk-ts": "0.3.0",
     "@tachibtc/taurus-vault-core": "0.3.4",
     "@tachibtc/taurus-wallet-aggregator": "0.4.5",
-    "dotenv": "^16.4.7"
+    "dotenv": "^16.4.7",
+    "viem": "2.21.54"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "solc": "0.8.28",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

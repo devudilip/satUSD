@@ -12,6 +12,10 @@
  * cosigned by Tachi's 5-of-7 validators, every txid is on the chain.
  * Demo simplification (same as `pnpm demo`): both MuSig2 halves — borrower
  * and protocol — are held in this one process, and the price is a dev feed.
+ *
+ * satUSD itself lives on Tachi EVM: every start deploys a SatUSD ERC-20 and a
+ * VaultManager contract, and each step (open, generate, pay back, liquidate,
+ * close, exit, price) is also an EVM transaction, visible on tachibtcscan.
  */
 import "dotenv/config";
 import { WalletAggregator } from "@tachibtc/taurus-wallet-aggregator";
@@ -39,6 +43,9 @@ import {
   DELINQUENCY_RATIO_BPS,
 } from "@satusd/tachi-kit";
 import { createDemoOwnerSigner } from "./lib/demo-signer.js";
+import { SatUsdEvm } from "./lib/satusd-evm.js";
+import type { EvmTxResult } from "./lib/tachi-evm.js";
+import { isAddress, type Hex } from "viem";
 
 const PORT = Number(process.env.APP_PORT ?? 4120);
 const HOST = process.env.APP_HOST ?? "127.0.0.1"; // 0.0.0.0 inside a container
@@ -48,7 +55,7 @@ const STABILITY_FEE_APR = "2%";
 const START_PRICE = 10_000_000n; // $100,000.00 / BTC
 const BURN_ADDRESS_REGTEST = "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080"; // mined coinbases go nowhere useful
 
-type Kind = "open" | "deposit" | "exit_signed" | "generate" | "payback" | "price" | "liquidate" | "close" | "exit" | "block";
+type Kind = "open" | "deposit" | "exit_signed" | "generate" | "payback" | "price" | "liquidate" | "close" | "exit" | "block" | "evm" | "transfer";
 interface Activity {
   readonly at: number;
   readonly kind: Kind;
@@ -56,6 +63,9 @@ interface Activity {
   readonly title: string;
   readonly detail?: string;
   readonly txid?: string;
+  /** Tachi EVM tx hash, linked to tachibtcscan. */
+  evmTx?: string;
+  evmUrl?: string;
 }
 interface VaultMeta {
   readonly no: number;
@@ -106,6 +116,20 @@ async function main() {
   let treasuryBtcSats = treasury.balance.confirmed;
   const log = (a: Omit<Activity, "at">) => activity.unshift({ at: Date.now(), ...a });
   log({ kind: "price", title: `Connected to Tachi ${config.chainId}`, detail: `${quorum.liveValidators}/${quorum.totalKnown} validators live, threshold ${quorum.threshold}` });
+
+  // ---------- satUSD on Tachi EVM ----------
+  const evm = new SatUsdEvm(config, demoMnemonic(config));
+  const evmLog = (a: Omit<Activity, "at" | "kind"> & { kind?: Kind }, r: EvmTxResult) =>
+    log({ kind: "evm", ...a, evmTx: r.hash, evmUrl: evm.txUrl(r.hash) });
+  console.log(`[app] deploying satUSD contracts on Tachi EVM (${config.network})…`);
+  const deployed = await evm.deploy(START_PRICE);
+  evmLog({ title: "SatUSD ERC-20 deployed on Tachi EVM", detail: `${evm.token} · ${deployed.token.receipt.gas_used.toLocaleString()} gas` }, deployed.token);
+  evmLog({ title: "VaultManager deployed on Tachi EVM", detail: `${evm.manager} · enforces 150% to mint, liquidation below 130%` }, deployed.manager);
+  console.log(`[app] SatUSD ${evm.token}  VaultManager ${evm.manager}`);
+  let satusdSupplyCents = 0n;
+  const refreshSatusd = async () => {
+    [satusdBalanceCents, satusdSupplyCents] = await Promise.all([evm.balanceCents(evm.user.address), evm.totalSupplyCents()]);
+  };
 
   // One action at a time: MuSig2 rounds and validator cosigns are sequential.
   let chain: Promise<unknown> = Promise.resolve();
@@ -186,7 +210,18 @@ async function main() {
       tipHeight: await getTipHeight(rpc),
       priceUsdCents: price,
       params: { minRatioBps: MIN_MINT_RATIO_BPS, liquidationRatioBps: LLTV_BPS, penaltyBps: PENALTY_BPS, stabilityFee: STABILITY_FEE_APR, termBlocks: CSV_BLOCKS },
-      wallet: { address: wallet.receiveAddress, btcSats: walletBtcSats, satusdCents: satusdBalanceCents },
+      wallet: { address: wallet.receiveAddress, btcSats: walletBtcSats, satusdCents: satusdBalanceCents, evmAddress: evm.user.address },
+      evm: {
+        explorer: evm.explorer,
+        chainId: "0x54434849",
+        token: evm.token,
+        tokenUrl: evm.addressUrl(evm.token),
+        manager: evm.manager,
+        managerUrl: evm.addressUrl(evm.manager),
+        operator: evm.operator.address,
+        user: evm.user.address,
+        supplyCents: satusdSupplyCents,
+      },
       treasury: { address: PAYOUT_ADDRESS, btcSats: treasuryBtcSats },
       totals: {
         collateralSats: open.reduce((s, v) => s + v.collateralSats, 0n),
@@ -229,6 +264,8 @@ async function main() {
         engine.confirmExitTxDelivered(cdp.id);
         log({ kind: "exit_signed", vaultId: cdp.id, title: "Exit transaction signed and handed to you", detail: `Spendable by you alone after ${CSV_BLOCKS} blocks — before any satUSD exists` });
         await mineOne("confirms the deposit");
+        const opened = await evm.openVault(cdp.channel.vaultId, depositSats, cdp.channel.vault.p2tr.output.subarray(2).toString("hex"), cdp.channel.funding.txid);
+        evmLog({ vaultId: cdp.id, title: `Vault #${no} recorded in VaultManager`, detail: `openVault(${cdp.channel.vaultId.slice(0, 10)}…, ${depositSats} sats) — the operator attests the confirmed BTC deposit` }, opened);
         if (generate > 0n) await doGenerate(cdp.id, generate);
         await refreshBalances();
         return { id: cdp.id };
@@ -240,14 +277,22 @@ async function main() {
 
   const doGenerate = async (id: string, cents: bigint) => {
     const { btcUsdCents } = await priceFeed.getPrice();
+    const cdp = engine.get(id);
+    if (!cdp) throw new Error("no such vault");
+    // Check the on-chain rule before co-signing anything on Bitcoin.
+    const sim = await evm.vault(cdp.channel.vaultId);
+    const after = collateralRatioBps(sim.collateralSats, sim.debtCents + cents, btcUsdCents);
+    if (after !== null && after < MIN_MINT_RATIO_BPS) throw new Error(`VaultManager would refuse: ratio would be ${(Number(after) / 100).toFixed(2)}%, minimum is 150%`);
     const { issuedUsdCents, state } = await engine.mint(id, cents, btcUsdCents);
-    satusdBalanceCents += issuedUsdCents;
     log({
       kind: "generate",
       vaultId: id,
-      title: `Generated ${fmtUsd(issuedUsdCents)} satUSD`,
-      detail: `Liquidation state n=${state.n} signed by you + protocol, cosigned by 5/7 Tachi validators · lender share ${state.shareSats} sats · txid-to-be ${state.refundTxid.slice(0, 16)}…`,
+      title: `Liquidation state n=${state.n} co-signed`,
+      detail: `Signed by you + protocol, cosigned by 5/7 Tachi validators · lender share ${state.shareSats} sats · txid-to-be ${state.refundTxid.slice(0, 16)}…`,
     });
+    const r = await evm.generate(cdp.channel.vaultId, issuedUsdCents, state.refundTxid);
+    evmLog({ kind: "generate", vaultId: id, title: `Minted ${fmtUsd(issuedUsdCents)} satUSD on Tachi EVM`, detail: `VaultManager.generate checked the ratio on-chain and minted the ERC-20 to ${evm.user.address.slice(0, 10)}…` }, r);
+    await refreshSatusd();
   };
 
   app.post<{ Params: { id: string }; Body: { usdCents: string } }>("/api/vaults/:id/generate", async (req, reply) => {
@@ -265,9 +310,19 @@ async function main() {
     try {
       return await exclusive(async () => {
         const cents = BigInt(req.body.usdCents);
+        const cdp = engine.get(req.params.id);
+        if (!cdp) throw new Error("no such vault");
+        await refreshSatusd();
         if (cents > satusdBalanceCents) throw new Error(`you only hold ${fmtUsd(satusdBalanceCents)} satUSD`);
+        // The owner burns first (their own EVM key signs), then the Bitcoin state is re-signed.
+        const r = await evm.payBack(cdp.channel.vaultId, cents);
+        evmLog({ kind: "payback", vaultId: req.params.id, title: `Burned ${fmtUsd(cents)} satUSD on Tachi EVM`, detail: "VaultManager.payBack, signed by the vault owner's own key" }, r);
         const state = await engine.repay(req.params.id, cents);
-        satusdBalanceCents -= cents;
+        if (state) {
+          const u = await evm.updateLiquidationTx(cdp.channel.vaultId, state.refundTxid);
+          evmLog({ kind: "payback", vaultId: req.params.id, title: "VaultManager: new liquidation txid recorded", detail: `State n=${state.n} · ${state.refundTxid.slice(0, 16)}…` }, u);
+        }
+        await refreshSatusd();
         log({
           kind: "payback",
           vaultId: req.params.id,
@@ -289,6 +344,8 @@ async function main() {
         txRoles.set(txid, { role: "close", vaultId: req.params.id });
         log({ kind: "close", vaultId: req.params.id, title: `${vaultName(req.params.id)} closed — BTC returned`, txid });
         await mineOne("confirms the close");
+        const r = await evm.close(engine.get(req.params.id)!.channel.vaultId, txid);
+        evmLog({ kind: "close", vaultId: req.params.id, title: "VaultManager: vault closed", detail: "close() only succeeds with zero debt · records the Bitcoin close txid" }, r);
         await refreshBalances();
         return { txid };
       });
@@ -318,6 +375,8 @@ async function main() {
         txRoles.set(txid, { role: "exit", vaultId: id });
         log({ kind: "exit", vaultId: id, title: `${vaultName(id)}: exit broadcast by you alone`, detail: "No engine, no protocol signature, no Tachi validators — only the pre-signed exit tx", txid });
         await mineOne("confirms the exit");
+        const r = await evm.recordExit(cdp.channel.vaultId, txid);
+        evmLog({ kind: "exit", vaultId: id, title: "VaultManager: exit recorded", detail: "Records the Bitcoin exit txid; the vault's debt is written off" }, r);
         await refreshBalances();
         return { txid };
       });
@@ -330,9 +389,29 @@ async function main() {
     try {
       const cents = BigInt(req.body.usdCents);
       if (cents <= 0n) throw new Error("price must be positive");
+      // On-chain first, so the keeper's liquidation never races ahead of the contract's price.
+      const r = await evm.setPrice(cents);
       priceFeed.setPrice(cents);
-      log({ kind: "price", title: `Oracle price set to ${fmtUsd(cents)} / BTC`, detail: "dev price feed" });
+      evmLog({ kind: "price", title: `Oracle price set to ${fmtUsd(cents)} / BTC`, detail: "VaultManager.setPrice (dev oracle) + engine price feed" }, r);
       return { ok: true };
+    } catch (err) {
+      return fail(reply, err);
+    }
+  });
+
+  // satUSD is a real ERC-20: send it to any EVM address.
+  app.post<{ Body: { to: string; usdCents: string } }>("/api/transfer", async (req, reply) => {
+    try {
+      const to = String(req.body.to ?? "").trim();
+      if (!isAddress(to)) throw new Error("enter a 0x… EVM address");
+      const cents = BigInt(req.body.usdCents);
+      if (cents <= 0n) throw new Error("amount must be positive");
+      await refreshSatusd();
+      if (cents > satusdBalanceCents) throw new Error(`you only hold ${fmtUsd(satusdBalanceCents)} satUSD`);
+      const r = await evm.transfer(to as Hex, cents);
+      evmLog({ kind: "transfer", title: `Sent ${fmtUsd(cents)} satUSD`, detail: `ERC-20 transfer to ${to}` }, r);
+      await refreshSatusd();
+      return { hash: r.hash, url: evm.txUrl(r.hash) };
     } catch (err) {
       return fail(reply, err);
     }
@@ -435,12 +514,21 @@ async function main() {
     const cdp = engine.get(req.params.id);
     if (!cdp) return reply.code(404).send({ error: "no such vault" });
     const ownerKey = cdp.channel.vault.userKey.xOnly.toString("hex");
-    const [balance, conf, tachiRecords] = await Promise.all([
+    const [balance, conf, tachiRecords, evmVault] = await Promise.all([
       getVaultBalanceSats(rpc, cdp.channel.vault.p2tr.address).catch(() => null),
       getConfirmations(rpc, cdp.channel.funding.txid).catch(() => 0),
       fetchTachiRecords(config.tachiUrl, ownerKey).catch(() => null),
+      evm.vault(cdp.channel.vaultId).catch(() => null),
     ]);
-    return j({ balanceSatsViaBitcoind: balance, depositConfirmations: conf, tachiRecords, tachiLink: `${config.tachiUrl}/tachi_addressTransactions?address=${ownerKey}` });
+    return j({
+      balanceSatsViaBitcoind: balance,
+      depositConfirmations: conf,
+      tachiRecords,
+      tachiLink: `${config.tachiUrl}/tachi_addressTransactions?address=${ownerKey}`,
+      evmVault,
+      evmVaultKey: cdp.channel.vaultId,
+      managerUrl: evm.addressUrl(evm.manager),
+    });
   });
 
   app.get("/app", async (_req, reply) => reply.redirect("/app.html"));
@@ -466,6 +554,14 @@ async function main() {
       void exclusive(async () => {
         await mineOne("confirms the liquidation");
         await refreshBalances();
+        const cdp = engine.get(cdpId);
+        if (!cdp) return;
+        try {
+          const r = await evm.liquidate(cdp.channel.vaultId, txid);
+          evmLog({ kind: "liquidate", vaultId: cdpId, title: "VaultManager: liquidation recorded", detail: "liquidate() re-checked the ratio on-chain (below 130%) and recorded the Bitcoin liquidation txid" }, r);
+        } catch (err) {
+          log({ kind: "liquidate", vaultId: cdpId, title: "VaultManager refused the liquidation", detail: err instanceof Error ? err.message : String(err) });
+        }
       });
     },
   }).catch((err) => console.error("[app] keeper stopped:", err));
