@@ -18,6 +18,7 @@
  * close, exit, price) is also an EVM transaction, visible on tachibtcscan.
  */
 import "dotenv/config";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { WalletAggregator } from "@tachibtc/taurus-wallet-aggregator";
 import { buildServer } from "@satusd/engine/server.js";
 import { CdpEngine, type CdpEvent } from "@satusd/engine/cdp.js";
@@ -53,6 +54,12 @@ const LLTV_BPS = DELINQUENCY_RATIO_BPS; // 130% — liquidation threshold
 const PENALTY_BPS = 800n; // 8%
 const STABILITY_FEE_APR = "2%";
 const START_PRICE = 10_000_000n; // $100,000.00 / BTC
+// Set ADMIN_KEY to make a public deployment view-only: anyone can watch,
+// only someone with the key can act (open, generate, price, …).
+const ADMIN_KEY = process.env.ADMIN_KEY?.trim() ?? "";
+const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
+const sha = (s: string) => createHash("sha256").update(s).digest();
+const isAdminKey = (k: unknown) => typeof k === "string" && ADMIN_KEY !== "" && timingSafeEqual(sha(k), sha(ADMIN_KEY));
 const BURN_ADDRESS_REGTEST = "bcrt1qw508d6qejxtdg4y5r3zarvary0c5xw7kygt080"; // mined coinbases go nowhere useful
 
 type Kind = "open" | "deposit" | "exit_signed" | "generate" | "payback" | "price" | "liquidate" | "close" | "exit" | "block" | "evm" | "transfer";
@@ -204,6 +211,7 @@ async function main() {
     const open = vaults.filter((v) => v.status === "open");
     return j({
       network: config.network,
+      viewOnly: ADMIN_KEY !== "",
       chainId: config.chainId,
       tachiUrl: config.tachiUrl,
       quorum,
@@ -535,7 +543,14 @@ async function main() {
   // The root URL opens the vault app; the older engine dashboard stays at /index.html.
   app.addHook("onRequest", async (req, reply) => {
     if (req.url === "/") return reply.redirect("/app.html");
+    if (!ADMIN_KEY || req.method === "GET" || req.method === "HEAD") return;
+    // The keeper runs in this process and calls the engine over loopback.
+    // Public traffic arrives through the reverse proxy, never from loopback.
+    if (LOOPBACK.has(req.socket.remoteAddress ?? "")) return;
+    if (isAdminKey(req.headers["x-admin-key"])) return;
+    return reply.code(401).send({ error: "View-only demo: actions need the admin key (click View only in the header)" });
   });
+  app.post("/api/admin/check", async () => ({ ok: true }));
 
   await app.listen({ port: PORT, host: HOST });
 

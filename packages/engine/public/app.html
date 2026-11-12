@@ -120,6 +120,10 @@ tr:last-child td { border-bottom: 0; }
 .ico.liquidate { background: var(--danger-soft); color: var(--danger); }
 .ico.exit, .ico.close { background: var(--accent-soft); color: var(--accent-ink); }
 .ico.evm, .ico.transfer, .ico.price { background: var(--surface-2); color: var(--accent-ink); }
+body.ro [data-go], body.ro #o-btn, body.ro .act, body.ro .price-ctl { pointer-events: none; opacity: .45; }
+.lock-chip { cursor: pointer; font: 600 12.5px Inter, sans-serif; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.lock-chip.on { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; }
+.viewonly { margin: 0 0 16px; padding: 12px 16px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); font-size: 14px; }
 .evm-tag { display: inline-block; padding: 1px 6px; border-radius: 5px; font-size: 10.5px; font-weight: 700; letter-spacing: .02em; background: var(--accent-soft); color: var(--accent-ink); margin-right: 4px; }
 .feed .t { font-weight: 600; } .feed .d { color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
 .feed .time { color: var(--faint); font-size: 12px; white-space: nowrap; }
@@ -167,6 +171,7 @@ pre.hex { white-space: pre-wrap; word-break: break-all; background: var(--surfac
     </nav>
     <div class="bar-right">
       <span class="chip hide-sm" id="net-chip"><span class="dot"></span><span>connecting…</span></span>
+      <button class="chip lock-chip" id="lock-chip" style="display:none" onclick="toggleAdmin()"></button>
       <span class="chip" id="wallet-chip">—</span>
     </div>
   </div>
@@ -191,8 +196,23 @@ let S = null; // latest /api/state
 let route = { name: "home" };
 let mounted = "";
 
+let adminKey = "";
+try { adminKey = localStorage.getItem("satusd-admin-key") || ""; } catch {}
+function saveKey(k) { adminKey = k; try { k ? localStorage.setItem("satusd-admin-key", k) : localStorage.removeItem("satusd-admin-key"); } catch {} }
+const isAdmin = () => !S || !S.viewOnly || !!adminKey;
+async function toggleAdmin() {
+  if (adminKey) { saveKey(""); toast("Locked: view only"); mounted = ""; return render(); }
+  const k = (window.prompt("Admin key for this demo") || "").trim();
+  if (!k) return;
+  saveKey(k);
+  try { await api("/api/admin/check", {}); toast("Unlocked: you can act on vaults"); }
+  catch { saveKey(""); toast("Wrong admin key", true); }
+  mounted = ""; render();
+}
 async function api(path, body) {
-  const res = await fetch(path, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const headers = { "content-type": "application/json" };
+  if (adminKey) headers["x-admin-key"] = adminKey;
+  const res = await fetch(path, body === undefined ? {} : { method: "POST", headers, body: JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
@@ -227,6 +247,11 @@ async function poll() {
 function header() {
   if (!S) return;
   $("#net-chip").innerHTML = `<span class="dot"></span><span>${esc(S.network)} · ${esc(S.chainId)} · block ${S.tipHeight}</span>`;
+  const lc = $("#lock-chip");
+  lc.style.display = S.viewOnly ? "" : "none";
+  lc.className = "chip lock-chip" + (adminKey ? " on" : "");
+  lc.textContent = adminKey ? "Admin ✓ · lock" : "View only · unlock";
+  document.body.classList.toggle("ro", !isAdmin());
   $("#wallet-chip").innerHTML = `<span class="pill btc">₿ ${btc(S.wallet.btcSats)}</span><span><b>${usd(S.wallet.satusdCents)}</b> satUSD</span>`;
   document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === (route.name === "vault" ? "home" : route.name === "tx" ? "explorer" : route.name)));
 }
@@ -263,6 +288,7 @@ function renderHome() {
   const vaults = S.vaults;
   $("#view").innerHTML = `
     <h1>Bitcoin vaults</h1>
+    ${isAdmin() ? "" : `<div class="viewonly"><b>View-only demo.</b> Everything here is live: open any vault or transaction to inspect it on Bitcoin and on Tachi&#39;s explorer. Actions are run by the presenter.</div>`}
     <p class="sub">Lock native BTC in a TAURUS vault on Bitcoin, generate satUSD — an ERC-20 on Tachi EVM — against it. No bridge, no wrapped BTC, no custodian.</p>
     <div class="grid g4" style="margin-bottom:16px">
       ${priceCard()}
@@ -312,7 +338,7 @@ function tokenCard() {
       <div class="field"><label><span>To (EVM address)</span></label><div class="input"><input id="t-to" placeholder="0x…" value="${esc(sendTo)}" oninput="sendTo=this.value"></div></div>
       <div class="field"><label><span>Amount</span><span>Balance: <span class="max" onclick="$('#t-amt').value=(Number(S.wallet.satusdCents)/100).toFixed(2);sendAmt=$('#t-amt').value">${usd(S.wallet.satusdCents)}</span></span></label>
       <div class="input"><input id="t-amt" type="number" min="0" step="100" placeholder="0" value="${esc(sendAmt)}" oninput="sendAmt=this.value"><span class="unit">satUSD</span></div></div>
-      <button class="btn block" onclick="sendSatusd()">Send</button>
+      <button class="btn block act" onclick="sendSatusd()">Send</button>
       <p class="note" style="margin-top:14px">A standard ERC-20 transfer, signed by your key and confirmed by Tachi.</p>
     </div>
   </div>`;
