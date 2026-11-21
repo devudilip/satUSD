@@ -42,6 +42,9 @@ import {
   collateralRatioBps,
   MIN_MINT_RATIO_BPS,
   DELINQUENCY_RATIO_BPS,
+  createProtocolVault,
+  deposit as depositToVault,
+  explorerTxUrl,
 } from "@satusd/tachi-kit";
 import { createDemoOwnerSigner } from "./lib/demo-signer.js";
 import { SatUsdEvm } from "./lib/satusd-evm.js";
@@ -125,7 +128,28 @@ async function main() {
   log({ kind: "price", title: `Connected to Tachi ${config.chainId}`, detail: `${quorum.liveValidators}/${quorum.totalKnown} validators live, threshold ${quorum.threshold}` });
 
   // ---------- satUSD on Tachi EVM ----------
-  const evm = new SatUsdEvm(config, demoMnemonic(config));
+  // Off regtest, EVM gas must be backed by real BTC: each EVM account gets a
+  // small Bitcoin deposit into a TAURUS vault owned by its key, then the
+  // matching VTXO is registered on Tachi and spent as gas.
+  const gasFunder = async (account: { xonly: Buffer }, sats: bigint) => {
+    const vault = await createProtocolVault(config, { userPubkey: Buffer.concat([Buffer.from([2]), account.xonly]), csvBlocks: CSV_BLOCKS });
+    await wallet.sync();
+    const dep = await depositToVault({ vault, userWallet: wallet, rpc, amountSats: sats, feeRateSatVb: 2 });
+    return { txid: dep.txid };
+  };
+  const evm = new SatUsdEvm(
+    config,
+    demoMnemonic(config),
+    canMine(config)
+      ? undefined
+      : {
+          funder: gasFunder,
+          operatorSats: 20_000n,
+          userSats: 10_000n,
+          onFunded: (account, txid, sats) =>
+            log({ kind: "deposit", title: `Gas for the ${account.label} EVM account: ${sats.toLocaleString()} sats`, detail: "Deposited on Bitcoin into a TAURUS vault owned by that key, then registered on Tachi as a VTXO that pays EVM gas", txid }),
+        },
+  );
   const evmLog = (a: Omit<Activity, "at" | "kind"> & { kind?: Kind }, r: EvmTxResult) =>
     log({ kind: "evm", ...a, evmTx: r.hash, evmUrl: evm.txUrl(r.hash) });
   console.log(`[app] deploying satUSD contracts on Tachi EVM (${config.network})…`);
@@ -211,6 +235,7 @@ async function main() {
     const open = vaults.filter((v) => v.status === "open");
     return j({
       network: config.network,
+      btcExplorerTx: explorerTxUrl(config, ""),
       viewOnly: ADMIN_KEY !== "",
       chainId: config.chainId,
       tachiUrl: config.tachiUrl,

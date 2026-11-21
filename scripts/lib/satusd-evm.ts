@@ -7,7 +7,7 @@
 import { TachiClient } from "@tachibtc/tachi-sdk-ts";
 import type { Abi, Hex } from "viem";
 import type { NetworkConfig } from "@satusd/tachi-kit";
-import { TachiEvmAccount, artifact, readContract, tachiScanUrl, type EvmTxResult } from "./tachi-evm.js";
+import { TachiEvmAccount, artifact, readContract, tachiScanUrl, type EvmTxResult, type GasFunder } from "./tachi-evm.js";
 
 const CENT = 10n ** 16n; // satUSD has 18 decimals; the engine counts cents
 const STATUS = ["none", "open", "liquidated", "closed", "exited"] as const;
@@ -34,10 +34,14 @@ export class SatUsdEvm {
   private readonly managerAbi = artifact("VaultManager").abi as Abi;
   private readonly tokenAbi = artifact("SatUSD").abi as Abi;
 
-  constructor(readonly config: NetworkConfig, seed: string) {
+  constructor(
+    readonly config: NetworkConfig,
+    seed: string,
+    gas?: { funder: GasFunder; operatorSats: bigint; userSats: bigint; onFunded?: (account: TachiEvmAccount, txid: string, sats: bigint) => void },
+  ) {
     this.client = new TachiClient({ baseUrl: config.tachiUrl });
-    this.operator = new TachiEvmAccount(config, this.client, seed, "operator");
-    this.user = new TachiEvmAccount(config, this.client, seed, "user");
+    this.operator = new TachiEvmAccount(config, this.client, seed, "operator", gas && { funder: gas.funder, sats: gas.operatorSats, onFunded: gas.onFunded });
+    this.user = new TachiEvmAccount(config, this.client, seed, "user", gas && { funder: gas.funder, sats: gas.userSats, onFunded: gas.onFunded });
     this.explorer = tachiScanUrl(config);
   }
 
@@ -46,7 +50,8 @@ export class SatUsdEvm {
 
   /** Fresh contracts every start, so on-chain state matches the in-memory engine. */
   async deploy(priceCents: bigint): Promise<{ token: EvmTxResult; manager: EvmTxResult }> {
-    await Promise.all([this.operator.ensureGas(), this.user.ensureGas()]);
+    await this.operator.ensureGas();
+    await this.user.ensureGas();
     const managerAddr = await this.operator.futureContractAddress(1n);
     const token = await this.operator.deploy("SatUSD", [managerAddr]);
     const manager = await this.operator.deploy("VaultManager", [token.receipt.contract_address, priceCents]);

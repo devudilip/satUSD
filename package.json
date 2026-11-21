@@ -16,6 +16,7 @@
     "demo:regtest": "TACHI_NETWORK=regtest tsx scripts/full-demo.ts",
     "demo:step": "TACHI_NETWORK=regtest DEMO_STEP=1 tsx scripts/full-demo.ts",
     "app": "TACHI_NETWORK=regtest tsx scripts/app.ts",
+    "app:signet": "TACHI_NETWORK=signet tsx scripts/app.ts",
     "contracts:build": "tsx scripts/build-contracts.ts",
     "evm:smoke": "tsx scripts/08-evm-smoke.ts",
     "demo:liquidate": "tsx scripts/demo-liquidate.ts",

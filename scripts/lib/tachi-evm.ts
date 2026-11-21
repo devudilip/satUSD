@@ -35,6 +35,12 @@ export const tachiScanUrl = (config: NetworkConfig) => `https://${config.network
 const GAS_TOPUP_SATS = 50_000n;
 const MIN_GAS_SATS = 5_000n;
 
+/**
+ * Puts real BTC behind a gas top-up: sends `sats` on Bitcoin into a TAURUS
+ * vault owned by this key and returns the funding txid. Required off regtest.
+ */
+export type GasFunder = (account: TachiEvmAccount, sats: bigint) => Promise<{ txid: string }>;
+
 export interface EvmTxResult {
   hash: string;
   receipt: EVMReceipt & { fee_sats?: number; contract_address?: string };
@@ -52,6 +58,7 @@ export class TachiEvmAccount {
     private readonly client: TachiClient,
     seed: string,
     readonly label: string,
+    private readonly fund?: { funder: GasFunder; sats: bigint; onFunded?: (account: TachiEvmAccount, txid: string, sats: bigint) => void },
   ) {
     this.priv = createHash("sha256").update(`satusd-evm/${label}/${seed}`).digest();
     this.xonly = Buffer.from(schnorr.getPublicKey(this.priv));
@@ -77,8 +84,13 @@ export class TachiEvmAccount {
   async ensureGas(minSats = MIN_GAS_SATS): Promise<bigint> {
     let total = (await this.spendable()).reduce((s, v) => s + BigInt(v.amount), 0n);
     if (total >= minSats) return total;
+    let amount = GAS_TOPUP_SATS;
     if (this.config.network !== "regtest") {
-      throw new Error(`${this.label} EVM account ${this.address} needs gas: fund Tachi key ${this.xonly.toString("hex")} with VTXOs`);
+      // Back the VTXO with a real Bitcoin deposit before registering it on Tachi.
+      if (!this.fund) throw new Error(`${this.label} EVM account ${this.address} needs gas: fund Tachi key ${this.xonly.toString("hex")} with VTXOs`);
+      amount = this.fund.sats;
+      const { txid } = await this.fund.funder(this, amount);
+      this.fund.onFunded?.(this, txid, amount);
     }
     const signer = {
       publicKey: this.xonly,
@@ -87,7 +99,7 @@ export class TachiEvmAccount {
       },
       signSchnorr: (h: Buffer) => Buffer.from(schnorr.sign(h, this.priv)),
     };
-    await registerDeposit(this.config, { userSigner: signer as never, amountSats: GAS_TOPUP_SATS, feeSats: 10n });
+    await registerDeposit(this.config, { userSigner: signer as never, amountSats: amount, feeSats: 10n });
     total = (await this.spendable()).reduce((s, v) => s + BigInt(v.amount), 0n);
     return total;
   }

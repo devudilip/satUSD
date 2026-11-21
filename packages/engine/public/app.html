@@ -355,7 +355,7 @@ function feed(items) {
   if (!items.length) return `<div class="empty">Nothing yet.</div>`;
   return `<ul class="feed">${items.map((a) => `<li>
     <span class="ico ${a.kind}">${ICONS[a.kind] || "•"}</span>
-    <div><div class="t">${esc(a.title)}</div>${a.detail ? `<div class="d">${esc(a.detail)}</div>` : ""}${a.txid ? `<div class="d">Bitcoin tx ${txLink(a.txid, 12)}</div>` : ""}${a.evmTx ? `<div class="d"><span class="evm-tag">TACHI EVM</span>${evmLink(a.evmUrl, a.evmTx, 12)}</div>` : ""}</div>
+    <div><div class="t">${esc(a.title)}</div>${a.detail ? `<div class="d">${esc(a.detail)}</div>` : ""}${a.txid ? `<div class="d">Bitcoin tx ${txLink(a.txid, 12)}${S && S.btcExplorerTx ? ` · <a href="${esc(S.btcExplorerTx + a.txid)}" target="_blank" rel="noopener">explorer ↗</a>` : ""}</div>` : ""}${a.evmTx ? `<div class="d"><span class="evm-tag">TACHI EVM</span>${evmLink(a.evmUrl, a.evmTx, 12)}</div>` : ""}</div>
     <span class="time">${ago(a.at)}</span></li>`).join("")}</ul>`;
 }
 async function setPrice() {
@@ -569,7 +569,8 @@ async function mountTx() {
   $("#tx-body").innerHTML = `
     <div style="display:flex;align-items:center;gap:12px;margin:10px 0 4px;flex-wrap:wrap"><h1 style="margin:0">${rname}</h1>
       ${t.vault ? `<a class="pill btc" href="#/vault/${encodeURIComponent(t.vaultId)}">${esc(t.vault)}</a>` : ""}
-      <span class="pill ${t.confirmations > 0 ? "open" : "liquidated"}">${t.confirmations > 0 ? `${t.confirmations} confirmation${t.confirmations === 1 ? "" : "s"}` : "unconfirmed"}</span></div>
+      <span class="pill ${t.confirmations > 0 ? "open" : "liquidated"}">${t.confirmations > 0 ? `${t.confirmations} confirmation${t.confirmations === 1 ? "" : "s"}` : "unconfirmed"}</span>
+      ${S && S.btcExplorerTx ? `<a class="btn small ghost" href="${esc(S.btcExplorerTx + t.txid)}" target="_blank" rel="noopener">View on block explorer ↗</a>` : ""}</div>
     <p class="sub mono" style="overflow-wrap:anywhere">${esc(t.txid)}</p>
     ${rdesc ? `<p class="note" style="margin-bottom:16px">${esc(rdesc)}</p>` : ""}
     <div class="grid g4" style="margin-bottom:16px">

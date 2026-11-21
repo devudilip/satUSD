@@ -179,12 +179,15 @@ export async function probeAcceptance(
 }
 
 /** Block-explorer link for humans; null on regtest. */
+/** Signet block explorer base. BTC_EXPLORER overrides it (e.g. https://blockstream.info/signet). */
+const signetExplorer = () => (process.env.BTC_EXPLORER ?? "https://mempool.space/signet").replace(/\/$/, "");
+
 export function explorerTxUrl(config: NetworkConfig, txid: string): string | null {
-  return config.network === "signet" ? `https://mempool.space/signet/tx/${txid}` : null;
+  return config.network === "signet" ? `${signetExplorer()}/tx/${txid}` : null;
 }
 
 export function explorerAddressUrl(config: NetworkConfig, address: string): string | null {
-  return config.network === "signet" ? `https://mempool.space/signet/address/${address}` : null;
+  return config.network === "signet" ? `${signetExplorer()}/address/${address}` : null;
 }
 
 function sleep(ms: number): Promise<void> {
