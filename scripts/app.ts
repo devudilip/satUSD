@@ -229,6 +229,16 @@ async function main() {
     };
   };
 
+  // One slow or failed node call must not blank the UI ("engine offline").
+  let lastTip = 0;
+  const safeTip = async () => {
+    try {
+      lastTip = await getTipHeight(rpc);
+    } catch {
+      /* keep the last known height */
+    }
+    return lastTip;
+  };
   app.get("/api/state", async () => {
     const { btcUsdCents: price } = await priceFeed.getPrice();
     const vaults = engine.all().map((c) => vaultView(c.id, price));
@@ -240,7 +250,7 @@ async function main() {
       chainId: config.chainId,
       tachiUrl: config.tachiUrl,
       quorum,
-      tipHeight: await getTipHeight(rpc),
+      tipHeight: await safeTip(),
       priceUsdCents: price,
       params: { minRatioBps: MIN_MINT_RATIO_BPS, liquidationRatioBps: LLTV_BPS, penaltyBps: PENALTY_BPS, stabilityFee: STABILITY_FEE_APR, termBlocks: CSV_BLOCKS },
       wallet: { address: wallet.receiveAddress, btcSats: walletBtcSats, satusdCents: satusdBalanceCents, evmAddress: evm.user.address },
